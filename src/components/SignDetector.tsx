@@ -8,13 +8,13 @@ import { signComparisonService, ComparisonResult } from '@/lib/signComparison';
 import { voiceAlertService } from '@/lib/voiceAlert';
 import { useToast } from '@/hooks/use-toast';
 import { Camera, Search, Timer, CheckCircle, AlertCircle, Volume2 } from 'lucide-react';
-import { Results } from '@mediapipe/hands';
+import { HandLandmarkerResult } from '@mediapipe/tasks-vision';
 
 export const SignDetector: React.FC = () => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const handDetectorRef = useRef<HandDetector | null>(null);
-  const onResultsRef = useRef<(results: Results) => void>(() => {});
+  const onResultsRef = useRef<(results: HandLandmarkerResult) => void>(() => {});
   
   const [isDetecting, setIsDetecting] = useState(false);
   const [preparationTime, setPreparationTime] = useState(0);
@@ -33,7 +33,7 @@ export const SignDetector: React.FC = () => {
       if (!videoRef.current) return;
 
       handDetectorRef.current = new HandDetector();
-      await handDetectorRef.current.initialize(videoRef.current, (res: Results) => onResultsRef.current(res));
+      await handDetectorRef.current.initialize(videoRef.current, (res: HandLandmarkerResult) => onResultsRef.current(res));
 
       setIsInitialized(true);
       toast({
@@ -50,7 +50,7 @@ export const SignDetector: React.FC = () => {
     }
   }, [toast]);
 
-  const onHandResults = useCallback((results: Results) => {
+  const onHandResults = useCallback((results: HandLandmarkerResult) => {
     if (canvasRef.current && videoRef.current) {
       const canvas = canvasRef.current;
       const ctx = canvas.getContext('2d', { 
@@ -66,14 +66,14 @@ export const SignDetector: React.FC = () => {
           ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
         }
       
-        if (results.multiHandLandmarks) {
-          setHandsDetected(results.multiHandLandmarks.length);
+        if (results.landmarks) {
+          setHandsDetected(results.landmarks.length);
           
           ctx.fillStyle = '#22d3ee';
           ctx.strokeStyle = '#06b6d4';
           ctx.lineWidth = 1.5;
           
-          for (const landmarks of results.multiHandLandmarks) {
+          for (const landmarks of results.landmarks) {
             ctx.beginPath();
             for (const landmark of landmarks) {
               ctx.moveTo(landmark.x * canvas.width + 2, landmark.y * canvas.height);
@@ -118,7 +118,7 @@ export const SignDetector: React.FC = () => {
         // CAPTURA ESTANDARIZADA DE KEYFRAMES - IDENTICA A SIGNRECORDER
         if (isDetecting) {
           // Solo capturar keyframes cuando hay manos detectadas
-          if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+          if (results.landmarks && results.landmarks.length > 0) {
             const frameData: FrameData = {
               timestamp: performance.now(),
               hands: HandDetector.extractHandData(results)

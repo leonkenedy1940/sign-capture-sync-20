@@ -7,7 +7,7 @@ import { HandDetector, FrameData } from '@/lib/mediapipe';
 import { signDatabase } from '@/lib/indexeddb';
 import { useToast } from '@/hooks/use-toast';
 import { Video, Square, Save, Camera } from 'lucide-react';
-import { Results } from '@mediapipe/hands';
+import { HandLandmarkerResult } from '@mediapipe/tasks-vision';
 
 interface SignRecorderProps {
   onSignSaved?: () => void;
@@ -88,7 +88,7 @@ export const SignRecorder: React.FC<SignRecorderProps> = ({ onSignSaved }) => {
     }
   }, [stopCamera]);
 
-  const onHandResults = useCallback((results: Results) => {
+  const onHandResults = useCallback((results: HandLandmarkerResult) => {
     if (canvasRef.current && videoRef.current) {
       const canvas = canvasRef.current;
       const ctx = canvas.getContext('2d', { 
@@ -104,14 +104,14 @@ export const SignRecorder: React.FC<SignRecorderProps> = ({ onSignSaved }) => {
           ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
         }
       
-        if (results.multiHandLandmarks) {
-          setHandsDetected(results.multiHandLandmarks.length);
+        if (results.landmarks) {
+          setHandsDetected(results.landmarks.length);
           
           ctx.fillStyle = '#22d3ee';
           ctx.strokeStyle = '#06b6d4';
           ctx.lineWidth = 1.5;
           
-          for (const landmarks of results.multiHandLandmarks) {
+          for (const landmarks of results.landmarks) {
             ctx.beginPath();
             for (const landmark of landmarks) {
               ctx.moveTo(landmark.x * canvas.width + 2, landmark.y * canvas.height);
@@ -156,7 +156,7 @@ export const SignRecorder: React.FC<SignRecorderProps> = ({ onSignSaved }) => {
         // CAPTURA ESTANDARIZADA DE KEYFRAMES
         if (isRecording) {
           // Solo capturar keyframes cuando hay manos detectadas
-          if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+          if (results.landmarks && results.landmarks.length > 0) {
             const frameData: FrameData = {
               timestamp: performance.now(),
               hands: HandDetector.extractHandData(results)
