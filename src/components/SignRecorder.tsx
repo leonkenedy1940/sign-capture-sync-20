@@ -46,49 +46,13 @@ export const SignRecorder: React.FC<SignRecorderProps> = ({ onSignSaved }) => {
     setIsInitialized(false);
   }, []);
 
-  const initializeCamera = useCallback(async () => {
-    // Stop any existing camera first
-    stopCamera();
-    
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ 
-        video: { 
-          width: { ideal: 320, max: 640 }, 
-          height: { ideal: 240, max: 480 },
-          frameRate: { ideal: 30, max: 30 }, // Cap at 30fps for stability
-          facingMode: 'user',
-          // Optimized video settings for low latency
-          aspectRatio: 4/3
-        } 
-      });
-      
-      streamRef.current = stream;
-      
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        videoRef.current.play();
-        
-        handDetectorRef.current = new HandDetector();
-        await handDetectorRef.current.initialize(videoRef.current, onHandResults);
-        
-        setIsInitialized(true);
-        toast({
-          title: "Cámara iniciada",
-          description: "Sistema de detección de manos activo",
-        });
-      }
-    } catch (error) {
-      console.error('Error accessing camera:', error);
-      stopCamera(); // Clean up on error
-      toast({
-        title: "Error de cámara",
-        description: "Cámara en uso por otra aplicación. Cierra otras pestañas que usen la cámara.",
-        variant: "destructive",
-      });
-    }
-  }, [stopCamera]);
-
   const onHandResults = useCallback((results: HandLandmarkerResult) => {
+    console.log('🔍 onHandResults llamado:', {
+      landmarks: results.landmarks?.length || 0,
+      isRecording,
+      timestamp: performance.now()
+    });
+    
     if (canvasRef.current && videoRef.current) {
       const canvas = canvasRef.current;
       const ctx = canvas.getContext('2d', { 
@@ -105,6 +69,7 @@ export const SignRecorder: React.FC<SignRecorderProps> = ({ onSignSaved }) => {
         }
       
         if (results.landmarks) {
+          console.log('👋 Manos detectadas:', results.landmarks.length);
           setHandsDetected(results.landmarks.length);
           
           ctx.fillStyle = '#22d3ee';
@@ -155,14 +120,20 @@ export const SignRecorder: React.FC<SignRecorderProps> = ({ onSignSaved }) => {
         
         // CAPTURA ESTANDARIZADA DE KEYFRAMES
         if (isRecording) {
+          console.log('📹 Modo grabación activo, verificando landmarks...');
           // Solo capturar keyframes cuando hay manos detectadas
           if (results.landmarks && results.landmarks.length > 0) {
+            console.log('✋ Landmarks encontrados, extrayendo datos...');
             const frameData: FrameData = {
               timestamp: performance.now(),
               hands: HandDetector.extractHandData(results)
             };
             
             // Validar que los datos están completos
+            console.log('📊 Datos extraídos:', {
+              handsCount: frameData.hands.length,
+              firstHandLandmarks: frameData.hands[0]?.landmarks?.length || 0
+            });
             if (frameData.hands.length > 0 && frameData.hands[0].landmarks.length === 21) {
               setKeyframes(prev => [...prev, frameData]);
               console.log('✓ Keyframe válido capturado:', {
@@ -170,12 +141,77 @@ export const SignRecorder: React.FC<SignRecorderProps> = ({ onSignSaved }) => {
                 handsCount: frameData.hands.length,
                 landmarksPerHand: frameData.hands.map(h => h.landmarks.length)
               });
+            } else {
+              console.warn('⚠️ Keyframe inválido:', {
+                handsCount: frameData.hands.length,
+                landmarksCount: frameData.hands[0]?.landmarks?.length || 0
+              });
             }
+          } else {
+            console.log('❌ No hay landmarks en este frame durante grabación');
           }
         }
       }
     }
   }, [isRecording]);
+
+  const initializeCamera = useCallback(async () => {
+    // Stop any existing camera first
+    stopCamera();
+    
+    try {
+      console.log('🎥 Inicializando cámara...');
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        video: { 
+          width: { ideal: 320, max: 640 }, 
+          height: { ideal: 240, max: 480 },
+          frameRate: { ideal: 30, max: 30 }, // Cap at 30fps for stability
+          facingMode: 'user',
+          // Optimized video settings for low latency
+          aspectRatio: 4/3
+        } 
+      });
+      
+      streamRef.current = stream;
+      
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        
+        // Wait for video to be ready
+        await new Promise<void>((resolve) => {
+          if (videoRef.current) {
+            videoRef.current.onloadedmetadata = () => {
+              console.log('📹 Video metadata cargado');
+              resolve();
+            };
+          }
+        });
+        
+        await videoRef.current.play();
+        console.log('▶️ Video reproduciendo');
+        
+        console.log('🤖 Inicializando detector de manos...');
+        handDetectorRef.current = new HandDetector();
+        await handDetectorRef.current.initialize(videoRef.current, onHandResults);
+        console.log('✅ Detector de manos inicializado');
+        
+        setIsInitialized(true);
+        toast({
+          title: "Cámara iniciada",
+          description: "Sistema de detección de manos activo",
+        });
+      }
+    } catch (error) {
+      console.error('❌ Error accessing camera:', error);
+      stopCamera(); // Clean up on error
+      toast({
+        title: "Error de cámara",
+        description: "Cámara en uso por otra aplicación. Cierra otras pestañas que usen la cámara.",
+        variant: "destructive",
+      });
+    }
+  }, [stopCamera, onHandResults]);
+
 
   const startRecording = useCallback(async () => {
     if (!videoRef.current || !isInitialized) return;
