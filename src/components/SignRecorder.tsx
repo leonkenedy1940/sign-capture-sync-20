@@ -25,6 +25,7 @@ export const SignRecorder: React.FC<SignRecorderProps> = ({ onSignSaved }) => {
   const [keyframes, setKeyframes] = useState<FrameData[]>([]);
   const [signName, setSignName] = useState('');
   const [isInitialized, setIsInitialized] = useState(false);
+  const [isCameraOn, setIsCameraOn] = useState(false);
   const [handsDetected, setHandsDetected] = useState(0);
   const [recordingTime, setRecordingTime] = useState(0);
   
@@ -44,6 +45,7 @@ export const SignRecorder: React.FC<SignRecorderProps> = ({ onSignSaved }) => {
       handDetectorRef.current.stop();
     }
     setIsInitialized(false);
+    setIsCameraOn(false);
   }, []);
 
   const onHandResults = useCallback((results: HandLandmarkerResult) => {
@@ -196,6 +198,7 @@ export const SignRecorder: React.FC<SignRecorderProps> = ({ onSignSaved }) => {
         console.log('✅ Detector de manos inicializado');
         
         setIsInitialized(true);
+        setIsCameraOn(true);
         toast({
           title: "Cámara iniciada",
           description: "Sistema de detección de manos activo",
@@ -358,13 +361,19 @@ export const SignRecorder: React.FC<SignRecorderProps> = ({ onSignSaved }) => {
     }
   }, [signName, recordedChunks, keyframes, recordingTime, onSignSaved, toast]);
 
+  const toggleCamera = useCallback(async () => {
+    if (isCameraOn) {
+      stopCamera();
+    } else {
+      await initializeCamera();
+    }
+  }, [isCameraOn, stopCamera, initializeCamera]);
+
   useEffect(() => {
-    initializeCamera();
-    
     return () => {
       stopCamera();
     };
-  }, [initializeCamera, stopCamera]);
+  }, [stopCamera]);
 
   useEffect(() => {
     if (canvasRef.current && videoRef.current) {
@@ -444,33 +453,46 @@ export const SignRecorder: React.FC<SignRecorderProps> = ({ onSignSaved }) => {
 
         <div className="flex gap-3">
           <Button
-            onClick={isRecording ? stopRecording : startRecording}
-            disabled={!isInitialized}
-            variant={isRecording ? "destructive" : "default"}
-            className={isRecording ? "shadow-glow-record" : ""}
+            onClick={toggleCamera}
+            variant={isCameraOn ? "destructive" : "default"}
+            className="flex-1"
           >
-            {isRecording ? (
-              <>
-                <Square className="w-4 h-4 mr-2" />
-                Detener ({recordingTime}s)
-              </>
-            ) : (
-              <>
-                <Video className="w-4 h-4 mr-2" />
-                Grabar Seña
-              </>
-            )}
-          </Button>
-
-          <Button
-            onClick={saveSign}
-            disabled={recordedChunks.length === 0 || !signName.trim()}
-            variant="outline"
-          >
-            <Save className="w-4 h-4 mr-2" />
-            Guardar
+            <Camera className="w-4 h-4 mr-2" />
+            {isCameraOn ? "Apagar Cámara" : "Prender Cámara"}
           </Button>
         </div>
+
+        {isCameraOn && (
+          <div className="flex gap-3">
+            <Button
+              onClick={isRecording ? stopRecording : startRecording}
+              disabled={!isInitialized}
+              variant={isRecording ? "destructive" : "default"}
+              className={isRecording ? "shadow-glow-record" : ""}
+            >
+              {isRecording ? (
+                <>
+                  <Square className="w-4 h-4 mr-2" />
+                  Detener ({recordingTime}s)
+                </>
+              ) : (
+                <>
+                  <Video className="w-4 h-4 mr-2" />
+                  Grabar Seña
+                </>
+              )}
+            </Button>
+
+            <Button
+              onClick={saveSign}
+              disabled={recordedChunks.length === 0 || !signName.trim()}
+              variant="outline"
+            >
+              <Save className="w-4 h-4 mr-2" />
+              Guardar
+            </Button>
+          </div>
+        )}
 
         {recordedChunks.length > 0 && (
           <div className="text-sm text-success">

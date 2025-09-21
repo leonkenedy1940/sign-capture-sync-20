@@ -20,6 +20,7 @@ export const SignDetector: React.FC = () => {
   const [preparationTime, setPreparationTime] = useState(0);
   const [detectionKeyframes, setDetectionKeyframes] = useState<FrameData[]>([]);
   const [isInitialized, setIsInitialized] = useState(false);
+  const [isCameraOn, setIsCameraOn] = useState(false);
   const [handsDetected, setHandsDetected] = useState(0);
   const [recordingTime, setRecordingTime] = useState(0);
   const [isComparing, setIsComparing] = useState(false);
@@ -27,6 +28,15 @@ export const SignDetector: React.FC = () => {
   const [bestMatch, setBestMatch] = useState<ComparisonResult | null>(null);
   
   const { toast } = useToast();
+
+  const stopCamera = useCallback(() => {
+    if (handDetectorRef.current) {
+      handDetectorRef.current.stop();
+      handDetectorRef.current = null;
+    }
+    setIsInitialized(false);
+    setIsCameraOn(false);
+  }, []);
 
   const initializeCamera = useCallback(async () => {
     try {
@@ -36,19 +46,21 @@ export const SignDetector: React.FC = () => {
       await handDetectorRef.current.initialize(videoRef.current, (res: HandLandmarkerResult) => onResultsRef.current(res));
 
       setIsInitialized(true);
+      setIsCameraOn(true);
       toast({
         title: "Cámara iniciada",
         description: "Sistema de detección de manos activo",
       });
     } catch (error) {
       console.error('Error initializing camera:', error);
+      stopCamera();
       toast({
         title: "Error de cámara",
         description: "No se pudo acceder a la cámara",
         variant: "destructive",
       });
     }
-  }, [toast]);
+  }, [toast, stopCamera]);
 
   const onHandResults = useCallback((results: HandLandmarkerResult) => {
     if (canvasRef.current && videoRef.current) {
@@ -338,15 +350,19 @@ export const SignDetector: React.FC = () => {
     }, 1000);
   }, [isInitialized, compareWithDatabase, toast]);
 
+  const toggleCamera = useCallback(async () => {
+    if (isCameraOn) {
+      stopCamera();
+    } else {
+      await initializeCamera();
+    }
+  }, [isCameraOn, stopCamera, initializeCamera]);
+
   useEffect(() => {
-    initializeCamera();
-    
     return () => {
-      if (handDetectorRef.current) {
-        handDetectorRef.current.stop();
-      }
+      stopCamera();
     };
-  }, [initializeCamera]);
+  }, [stopCamera]);
 
   useEffect(() => {
     if (canvasRef.current && videoRef.current) {
@@ -451,28 +467,39 @@ export const SignDetector: React.FC = () => {
 
       <div className="space-y-4">
         <Button
-          onClick={startDetection}
-          disabled={!isInitialized || isDetecting || preparationTime > 0}
-          variant="default"
+          onClick={toggleCamera}
+          variant={isCameraOn ? "destructive" : "default"}
           className="w-full"
         >
-          {preparationTime > 0 ? (
-            <>
-              <Timer className="w-4 h-4 mr-2" />
-              Preparando... {preparationTime}s
-            </>
-          ) : isDetecting ? (
-            <>
-              <Search className="w-4 h-4 mr-2" />
-              Detectando... {recordingTime}s
-            </>
-          ) : (
-            <>
-              <Search className="w-4 h-4 mr-2" />
-              Iniciar Detección
-            </>
-          )}
+          <Camera className="w-4 h-4 mr-2" />
+          {isCameraOn ? "Apagar Cámara" : "Prender Cámara"}
         </Button>
+
+        {isCameraOn && (
+          <Button
+            onClick={startDetection}
+            disabled={!isInitialized || isDetecting || preparationTime > 0}
+            variant="default"
+            className="w-full"
+          >
+            {preparationTime > 0 ? (
+              <>
+                <Timer className="w-4 h-4 mr-2" />
+                Preparando... {preparationTime}s
+              </>
+            ) : isDetecting ? (
+              <>
+                <Search className="w-4 h-4 mr-2" />
+                Detectando... {recordingTime}s
+              </>
+            ) : (
+              <>
+                <Search className="w-4 h-4 mr-2" />
+                Iniciar Detección
+              </>
+            )}
+          </Button>
+        )}
 
         {detectionKeyframes.length > 0 && !isComparing && !bestMatch && comparisonResults.length === 0 && (
           <div className="text-sm text-success">
