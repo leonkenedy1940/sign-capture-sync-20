@@ -14,6 +14,7 @@ export const SignDetector: React.FC = () => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const handDetectorRef = useRef<HandDetector | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
   const onResultsRef = useRef<(results: HandLandmarkerResult) => void>(() => {});
   
   const [isDetecting, setIsDetecting] = useState(false);
@@ -30,6 +31,15 @@ export const SignDetector: React.FC = () => {
   const { toast } = useToast();
 
   const stopCamera = useCallback(() => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => {
+        track.stop();
+      });
+      streamRef.current = null;
+    }
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
     if (handDetectorRef.current) {
       handDetectorRef.current.stop();
       handDetectorRef.current = null;
@@ -39,24 +49,58 @@ export const SignDetector: React.FC = () => {
   }, []);
 
   const initializeCamera = useCallback(async () => {
+    // Stop any existing camera first
+    stopCamera();
+    
     try {
-      if (!videoRef.current) return;
-
-      handDetectorRef.current = new HandDetector();
-      await handDetectorRef.current.initialize(videoRef.current, (res: HandLandmarkerResult) => onResultsRef.current(res));
-
-      setIsInitialized(true);
-      setIsCameraOn(true);
-      toast({
-        title: "Cámara iniciada",
-        description: "Sistema de detección de manos activo",
+      console.log('🎥 Inicializando cámara en detector...');
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        video: { 
+          width: { ideal: 320, max: 640 }, 
+          height: { ideal: 240, max: 480 },
+          frameRate: { ideal: 30, max: 30 },
+          facingMode: 'user',
+          aspectRatio: 4/3
+        } 
       });
+      
+      streamRef.current = stream;
+      
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        
+        // Wait for video to be ready
+        await new Promise<void>((resolve) => {
+          if (videoRef.current) {
+            videoRef.current.onloadedmetadata = () => {
+              console.log('📹 Video metadata cargado en detector');
+              resolve();
+            };
+          }
+        });
+        
+        await videoRef.current.play();
+        console.log('▶️ Video reproduciendo en detector');
+        
+        console.log('🤖 Inicializando detector de manos en detector...');
+        handDetectorRef.current = new HandDetector();
+        await handDetectorRef.current.initialize(videoRef.current, (res: HandLandmarkerResult) => onResultsRef.current(res));
+        console.log('✅ Detector de manos inicializado en detector');
+        
+        setIsInitialized(true);
+        setIsCameraOn(true);
+        
+        toast({
+          title: "Detector iniciado",
+          description: "Sistema de detección activo",
+        });
+      }
     } catch (error) {
-      console.error('Error initializing camera:', error);
+      console.error('❌ Error accessing camera in detector:', error);
       stopCamera();
       toast({
         title: "Error de cámara",
-        description: "No se pudo acceder a la cámara",
+        description: "Cámara en uso por otra aplicación. Cierra otras pestañas que usen la cámara.",
         variant: "destructive",
       });
     }

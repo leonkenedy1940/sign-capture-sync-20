@@ -120,37 +120,52 @@ export const SignRecorder: React.FC<SignRecorderProps> = ({ onSignSaved }) => {
           setHandsDetected(0);
         }
         
-        // CAPTURA ESTANDARIZADA DE KEYFRAMES
+        // CAPTURA ESTANDARIZADA DE KEYFRAMES - MEJORADA
         if (isRecording) {
-          console.log('📹 Modo grabación activo, verificando landmarks...');
-          // Solo capturar keyframes cuando hay manos detectadas
+          console.log('📹 Modo grabación activo, verificando landmarks...', {
+            hasLandmarks: !!results.landmarks,
+            landmarksCount: results.landmarks?.length || 0
+          });
+          
+          // Capturar keyframes cuando hay manos detectadas
           if (results.landmarks && results.landmarks.length > 0) {
             console.log('✋ Landmarks encontrados, extrayendo datos...');
-            const frameData: FrameData = {
-              timestamp: performance.now(),
-              hands: HandDetector.extractHandData(results)
-            };
             
-            // Validar que los datos están completos
-            console.log('📊 Datos extraídos:', {
-              handsCount: frameData.hands.length,
-              firstHandLandmarks: frameData.hands[0]?.landmarks?.length || 0
-            });
-            if (frameData.hands.length > 0 && frameData.hands[0].landmarks.length === 21) {
-              setKeyframes(prev => [...prev, frameData]);
-              console.log('✓ Keyframe válido capturado:', {
-                timestamp: frameData.timestamp,
+            try {
+              const frameData: FrameData = {
+                timestamp: performance.now(),
+                hands: HandDetector.extractHandData(results)
+              };
+              
+              console.log('📊 Datos extraídos del frame:', {
                 handsCount: frameData.hands.length,
-                landmarksPerHand: frameData.hands.map(h => h.landmarks.length)
+                allHandsLandmarks: frameData.hands.map(h => h.landmarks.length),
+                validHands: frameData.hands.filter(h => h.landmarks.length === 21).length
               });
-            } else {
-              console.warn('⚠️ Keyframe inválido:', {
-                handsCount: frameData.hands.length,
-                landmarksCount: frameData.hands[0]?.landmarks?.length || 0
-              });
+              
+              // Validar que al menos una mano tiene datos completos
+              const validHands = frameData.hands.filter(h => h.landmarks.length === 21);
+              if (validHands.length > 0) {
+                setKeyframes(prev => {
+                  const newKeyframes = [...prev, frameData];
+                  console.log('✓ Keyframe válido capturado. Total keyframes:', newKeyframes.length, {
+                    timestamp: frameData.timestamp,
+                    handsCount: frameData.hands.length,
+                    validHandsCount: validHands.length
+                  });
+                  return newKeyframes;
+                });
+              } else {
+                console.warn('⚠️ Keyframe rechazado - sin manos válidas:', {
+                  handsCount: frameData.hands.length,
+                  landmarksPerHand: frameData.hands.map(h => h.landmarks.length)
+                });
+              }
+            } catch (error) {
+              console.error('❌ Error extrayendo datos del frame:', error);
             }
           } else {
-            console.log('❌ No hay landmarks en este frame durante grabación');
+            console.log('❌ No hay landmarks detectados en este frame durante grabación');
           }
         }
       }
