@@ -19,6 +19,8 @@ export const SignRecorder: React.FC<SignRecorderProps> = ({ onSignSaved }) => {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const handDetectorRef = useRef<HandDetector | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const onResultsRef = useRef<(results: HandLandmarkerResult) => void>(() => {});
+  const isRecordingRef = useRef(false);
   
   const [isRecording, setIsRecording] = useState(false);
   const [recordedChunks, setRecordedChunks] = useState<Blob[]>([]);
@@ -121,7 +123,7 @@ export const SignRecorder: React.FC<SignRecorderProps> = ({ onSignSaved }) => {
         }
         
         // CAPTURA ESTANDARIZADA DE KEYFRAMES - MEJORADA
-        if (isRecording) {
+        if (isRecordingRef.current) {
           console.log('📹 Modo grabación activo, verificando landmarks...', {
             hasLandmarks: !!results.landmarks,
             landmarksCount: results.landmarks?.length || 0
@@ -170,7 +172,7 @@ export const SignRecorder: React.FC<SignRecorderProps> = ({ onSignSaved }) => {
         }
       }
     }
-  }, [isRecording]);
+   }, []);
 
   const initializeCamera = useCallback(async () => {
     // Stop any existing camera first
@@ -209,7 +211,7 @@ export const SignRecorder: React.FC<SignRecorderProps> = ({ onSignSaved }) => {
         
         console.log('🤖 Inicializando detector de manos...');
         handDetectorRef.current = new HandDetector();
-        await handDetectorRef.current.initialize(videoRef.current, onHandResults);
+        await handDetectorRef.current.initialize(videoRef.current, (res: HandLandmarkerResult) => onResultsRef.current(res));
         console.log('✅ Detector de manos inicializado');
         
         setIsInitialized(true);
@@ -389,6 +391,14 @@ export const SignRecorder: React.FC<SignRecorderProps> = ({ onSignSaved }) => {
       stopCamera();
     };
   }, [stopCamera]);
+
+  useEffect(() => {
+    onResultsRef.current = onHandResults;
+  }, [onHandResults]);
+
+  useEffect(() => {
+    isRecordingRef.current = isRecording;
+  }, [isRecording]);
 
   useEffect(() => {
     if (canvasRef.current && videoRef.current) {
