@@ -125,35 +125,59 @@ export const SignDetector: React.FC = () => {
         if (results.landmarks) {
           setHandsDetected(results.landmarks.length);
           
-          ctx.fillStyle = '#22d3ee';
-          ctx.strokeStyle = '#06b6d4';
-          ctx.lineWidth = 1.5;
-          
           for (const landmarks of results.landmarks) {
+            // Dibujar landmarks clave con mayor tamaño y colores diferentes
+            const keyLandmarks = [0, 4, 8, 12, 16, 20]; // Muñeca y puntas de dedos
+            
+            // Landmarks normales en azul claro
+            ctx.fillStyle = '#22d3ee';
             ctx.beginPath();
-            for (const landmark of landmarks) {
-              ctx.moveTo(landmark.x * canvas.width + 2, landmark.y * canvas.height);
-              ctx.arc(
-                landmark.x * canvas.width,
-                landmark.y * canvas.height,
-                2,
-                0,
-                2 * Math.PI
-              );
+            for (let i = 0; i < landmarks.length; i++) {
+              if (!keyLandmarks.includes(i)) {
+                const landmark = landmarks[i];
+                ctx.moveTo(landmark.x * canvas.width + 1.5, landmark.y * canvas.height);
+                ctx.arc(
+                  landmark.x * canvas.width,
+                  landmark.y * canvas.height,
+                  1.5,
+                  0,
+                  2 * Math.PI
+                );
+              }
             }
             ctx.fill();
-        
-            const essentialConnections = [
+            
+            // Landmarks clave en amarillo/naranja más grandes
+            ctx.fillStyle = '#fbbf24';
+            ctx.beginPath();
+            for (const keyIndex of keyLandmarks) {
+              if (landmarks[keyIndex]) {
+                const landmark = landmarks[keyIndex];
+                ctx.moveTo(landmark.x * canvas.width + 3, landmark.y * canvas.height);
+                ctx.arc(
+                  landmark.x * canvas.width,
+                  landmark.y * canvas.height,
+                  3,
+                  0,
+                  2 * Math.PI
+                );
+              }
+            }
+            ctx.fill();
+            
+            // Conexiones estructurales en verde
+            ctx.strokeStyle = '#10b981';
+            ctx.lineWidth = 1.5;
+            const structuralConnections = [
               [0, 1], [1, 2], [2, 3], [3, 4],
               [0, 5], [5, 6], [6, 7], [7, 8],
               [0, 9], [9, 10], [10, 11], [11, 12],
               [0, 13], [13, 14], [14, 15], [15, 16],
               [0, 17], [17, 18], [18, 19], [19, 20],
-              [5, 9], [9, 13], [13, 17]
             ];
             
             ctx.beginPath();
-            for (const [start, end] of essentialConnections) {
+            for (const [start, end] of structuralConnections) {
               if (landmarks[start] && landmarks[end]) {
                 ctx.moveTo(
                   landmarks[start].x * canvas.width,
@@ -166,6 +190,47 @@ export const SignDetector: React.FC = () => {
               }
             }
             ctx.stroke();
+            
+            // Líneas de distancia entre landmarks clave en rojo para visualizar medidas exactas
+            ctx.strokeStyle = '#ef4444';
+            ctx.lineWidth = 1;
+            ctx.setLineDash([5, 5]);
+            
+            const keyConnections = [
+              [0, 4], [0, 8], [0, 12], [0, 16], [0, 20], // Muñeca a puntas
+              [4, 8], [8, 12], [12, 16], [16, 20] // Entre puntas adyacentes
+            ];
+            
+            ctx.beginPath();
+            for (const [start, end] of keyConnections) {
+              if (landmarks[start] && landmarks[end]) {
+                ctx.moveTo(
+                  landmarks[start].x * canvas.width,
+                  landmarks[start].y * canvas.height
+                );
+                ctx.lineTo(
+                  landmarks[end].x * canvas.width,
+                  landmarks[end].y * canvas.height
+                );
+                
+                // Mostrar distancia numérica
+                const midX = (landmarks[start].x + landmarks[end].x) * canvas.width / 2;
+                const midY = (landmarks[start].y + landmarks[end].y) * canvas.height / 2;
+                const distance = Math.sqrt(
+                  Math.pow(landmarks[start].x - landmarks[end].x, 2) + 
+                  Math.pow(landmarks[start].y - landmarks[end].y, 2)
+                ).toFixed(3);
+                
+                ctx.fillStyle = '#ffffff';
+                ctx.fillRect(midX - 15, midY - 8, 30, 16);
+                ctx.fillStyle = '#000000';
+                ctx.font = '8px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText(distance, midX, midY + 2);
+              }
+            }
+            ctx.stroke();
+            ctx.setLineDash([]);
           }
         } else {
           setHandsDetected(0);
