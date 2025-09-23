@@ -60,32 +60,48 @@ export const SignLibrary: React.FC<SignLibraryProps> = ({ refreshTrigger }) => {
             // Draw video frame
             ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
             
-            // Find closest keyframe based on video time
-            const currentTime = videoRef.current.currentTime * 1000; // Convert to ms
-            const startTime = sign.keyframes[0]?.timestamp || 0;
-            const relativeTime = currentTime + startTime;
-            
-            const closestFrame = sign.keyframes.find((frame, index) => {
-              const nextFrame = sign.keyframes[index + 1];
-              if (!nextFrame) return true;
-              return frame.timestamp <= relativeTime && nextFrame.timestamp > relativeTime;
-            });
+            // Calcular el frame más cercano basado en el progreso del video
+            const progress = videoRef.current.currentTime / videoRef.current.duration;
+            const frameIndex = Math.floor(progress * (sign.keyframes.length - 1));
+            const currentFrame = sign.keyframes[frameIndex];
             
             // Draw hand keypoints if available
-            if (closestFrame && closestFrame.hands.length > 0) {
-              for (const hand of closestFrame.hands) {
-                // Draw landmarks
-                for (const landmark of hand.landmarks) {
-                  ctx.beginPath();
-                  ctx.arc(
-                    landmark.x * canvas.width,
-                    landmark.y * canvas.height,
-                    4,
-                    0,
-                    2 * Math.PI
-                  );
-                  ctx.fillStyle = hand.handedness === 'Left' ? '#22d3ee' : '#06b6d4';
-                  ctx.fill();
+            if (currentFrame && currentFrame.hands.length > 0) {
+              for (const hand of currentFrame.hands) {
+                // Draw key landmarks first (bigger circles)
+                const keyLandmarks = [0, 4, 8, 12, 16, 20]; // Wrist and fingertips
+                
+                ctx.fillStyle = hand.handedness === 'Left' ? '#fbbf24' : '#f59e0b';
+                for (const keyIndex of keyLandmarks) {
+                  if (hand.landmarks[keyIndex]) {
+                    const landmark = hand.landmarks[keyIndex];
+                    ctx.beginPath();
+                    ctx.arc(
+                      landmark.x * canvas.width,
+                      landmark.y * canvas.height,
+                      6,
+                      0,
+                      2 * Math.PI
+                    );
+                    ctx.fill();
+                  }
+                }
+                
+                // Draw regular landmarks (smaller circles)
+                ctx.fillStyle = hand.handedness === 'Left' ? '#22d3ee' : '#06b6d4';
+                for (let i = 0; i < hand.landmarks.length; i++) {
+                  if (!keyLandmarks.includes(i)) {
+                    const landmark = hand.landmarks[i];
+                    ctx.beginPath();
+                    ctx.arc(
+                      landmark.x * canvas.width,
+                      landmark.y * canvas.height,
+                      3,
+                      0,
+                      2 * Math.PI
+                    );
+                    ctx.fill();
+                  }
                 }
                 
                 // Draw connections
@@ -98,7 +114,7 @@ export const SignLibrary: React.FC<SignLibraryProps> = ({ refreshTrigger }) => {
                   [5, 9], [9, 13], [13, 17] // Palm
                 ];
                 
-                ctx.strokeStyle = hand.handedness === 'Left' ? '#22d3ee' : '#06b6d4';
+                ctx.strokeStyle = hand.handedness === 'Left' ? '#10b981' : '#059669';
                 ctx.lineWidth = 2;
                 
                 for (const [start, end] of connections) {
@@ -116,6 +132,14 @@ export const SignLibrary: React.FC<SignLibraryProps> = ({ refreshTrigger }) => {
                   }
                 }
               }
+              
+              // Show frame info
+              ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+              ctx.fillRect(10, canvas.height - 50, 200, 35);
+              ctx.fillStyle = '#ffffff';
+              ctx.font = '14px Arial';
+              ctx.fillText(`Frame: ${frameIndex + 1}/${sign.keyframes.length}`, 15, canvas.height - 30);
+              ctx.fillText(`Manos: ${currentFrame.hands.length}`, 15, canvas.height - 15);
             }
           }
         };

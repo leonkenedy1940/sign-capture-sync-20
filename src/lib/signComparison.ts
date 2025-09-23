@@ -8,9 +8,9 @@ export interface ComparisonResult {
 }
 
 export class SignComparisonService {
-  private readonly SIMILARITY_THRESHOLD = 0.92; // Más estricto para mayor exactitud
-  private readonly TARGET_FRAMES = 60; // Normalizar a 60 frames (8 segundos a ~7.5 fps)
-  private readonly MIN_QUALITY_FRAMES = 40; // Mínimo de frames de calidad requeridos
+  private readonly SIMILARITY_THRESHOLD = 0.8; // Threshold más razonable para detección
+  private readonly TARGET_FRAMES = 40; // Normalizar a 40 frames (8 segundos a ~5 fps)
+  private readonly MIN_QUALITY_FRAMES = 20; // Mínimo de frames de calidad requeridos
 
   /**
    * Normaliza una secuencia de frames a una duración específica
@@ -30,58 +30,43 @@ export class SignComparisonService {
   }
 
   /**
-   * Extrae características mejoradas de un frame con normalización relativa
+   * Extrae características básicas y confiables de un frame
    */
   private extractFeatures(frameData: FrameData): number[] {
     const features: number[] = [];
     
     frameData.hands.forEach(hand => {
-      if (hand.landmarks.length !== 21) return; // Validar landmarks completos
+      if (hand.landmarks.length !== 21) return;
       
-      // Usar la muñeca (landmark 0) como punto de referencia para normalización
-      const wrist = hand.landmarks[0];
-      
-      // Landmarks clave para mayor precisión en comparación
-      const keyLandmarks = [0, 4, 8, 12, 16, 20]; // Muñeca y puntas de dedos
-      
-      hand.landmarks.forEach((landmark, index) => {
-        // Normalizar posición relativa a la muñeca para invarianza de posición
-        const relativeX = landmark.x - wrist.x;
-        const relativeY = landmark.y - wrist.y;
-        const relativeZ = landmark.z - wrist.z;
-        
-        // Dar más peso a landmarks clave
-        const weight = keyLandmarks.includes(index) ? 1.5 : 1.0;
-        
-        features.push(relativeX * weight, relativeY * weight, relativeZ * weight);
+      // Usar landmarks básicos sin complicaciones
+      hand.landmarks.forEach(landmark => {
+        features.push(landmark.x, landmark.y, landmark.z);
       });
 
-      // Agregar distancias entre landmarks clave para capturar la forma de la mano
-      for (let i = 0; i < keyLandmarks.length - 1; i++) {
-        for (let j = i + 1; j < keyLandmarks.length; j++) {
-          const p1 = hand.landmarks[keyLandmarks[i]];
-          const p2 = hand.landmarks[keyLandmarks[j]];
-          const distance = Math.sqrt(
-            Math.pow(p1.x - p2.x, 2) + 
-            Math.pow(p1.y - p2.y, 2) + 
-            Math.pow(p1.z - p2.z, 2)
-          );
-          features.push(distance);
-        }
-      }
+      // Agregar ángulos básicos entre dedos clave
+      const wrist = hand.landmarks[0];
+      const thumb = hand.landmarks[4];
+      const index = hand.landmarks[8];
+      const middle = hand.landmarks[12];
+      const ring = hand.landmarks[16];
+      const pinky = hand.landmarks[20];
+
+      // Calcular ángulos simples entre la muñeca y cada punta de dedo
+      const angles = [thumb, index, middle, ring, pinky].map(tip => {
+        const dx = tip.x - wrist.x;
+        const dy = tip.y - wrist.y;
+        return Math.atan2(dy, dx);
+      });
+      
+      features.push(...angles);
     });
 
-    // Si no hay manos detectadas, retornar vector nulo
-    if (features.length === 0) {
-      return new Array(78).fill(0); // 21 landmarks * 3 coords + 15 distancias
-    }
-
-    // Normalizar tamaño del vector
-    while (features.length < 156) { // 2 manos * 78 features
+    // Normalizar tamaño del vector para una o dos manos
+    while (features.length < 130) { // 2 manos * (21*3 + 5 ángulos)
       features.push(0);
     }
 
-    return features.slice(0, 156);
+    return features.slice(0, 130);
   }
 
   /**
@@ -218,13 +203,10 @@ export class SignComparisonService {
       const finalDtwSim = isNaN(dtwSimilarity) ? 0 : dtwSimilarity;
       const finalCosineSim = isNaN(avgCosineSimilarity) ? 0 : avgCosineSimilarity;
 
-      // Combinar métricas con pesos optimizados para mayor exactitud
-      const finalSimilarity = (finalDtwSim * 0.7) + (finalCosineSim * 0.3);
+      // Combinar métricas de forma balanceada
+      const finalSimilarity = (finalDtwSim * 0.6) + (finalCosineSim * 0.4);
       
-      // Aplicar función de suavizado para penalizar similitudes mediocres
-      const smoothedSimilarity = Math.pow(finalSimilarity, 1.2);
-      
-      return Math.max(0, Math.min(1, smoothedSimilarity)); // Asegurar que esté entre 0 y 1
+      return Math.max(0, Math.min(1, finalSimilarity)); // Asegurar que esté entre 0 y 1
     } catch (error) {
       console.error('Error en compareSequences:', error);
       return 0;

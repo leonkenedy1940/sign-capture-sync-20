@@ -371,42 +371,45 @@ export const SignDetector: React.FC = () => {
         }))
       );
 
-      // Enhanced logging for comparison results
-      enhancedLogger.logComparisonResults(results, results.filter(r => r.similarity >= 0.85));
+        // Enhanced logging for comparison results
+        enhancedLogger.logComparisonResults(results, results.filter(r => r.similarity >= 0.8));
 
-      if (match) {
-        console.log('✓ Coincidencia encontrada:', match);
-        setBestMatch(match);
-        
-        // Use enhanced logging for valid signs
-        enhancedLogger.logValidSign(match.signName, match.similarity);
-        
-        try {
-          await voiceAlertService.playSignRecognitionAlert(match.signName);
-        } catch (voiceError) {
-          console.error('Error en alerta de voz:', voiceError);
+        if (match) {
+          console.log('✓ Seña reconocida:', match);
+          setBestMatch(match);
+          
+          enhancedLogger.logValidSign(match.signName, match.similarity);
+          
+          toast({
+            title: `Seña reconocida: ${match.signName}`,
+            description: `Similitud: ${(match.similarity * 100).toFixed(1)}%`,
+          });
+          
+          try {
+            await voiceAlertService.playSignRecognitionAlert(match.signName);
+          } catch (voiceError) {
+            console.error('Error en alerta de voz:', voiceError);
+          }
+        } else {
+          console.log('✗ Seña no encontrada');
+          
+          // Log invalid signs for analysis
+          const invalidSigns = results.filter(r => r.similarity < 0.8 && r.similarity > 0.2);
+          invalidSigns.forEach(result => {
+            enhancedLogger.logInvalidSign(result.signName, result.similarity);
+          });
+          
+          toast({
+            title: "Seña no encontrada",
+            description: "Los resultados de comparación se muestran abajo. Puedes intentar de nuevo.",
+          });
+          
+          try {
+            await voiceAlertService.playNoMatchAlert();
+          } catch (voiceError) {
+            console.error('Error en alerta de voz:', voiceError);
+          }
         }
-      } else {
-        console.log('✗ No se encontraron coincidencias válidas');
-        
-        // Check if there were any detections below threshold and log them as invalid
-        const invalidSigns = results.filter(r => r.similarity < 0.85 && r.similarity > 0.3);
-        invalidSigns.forEach(result => {
-          enhancedLogger.logInvalidSign(result.signName, result.similarity);
-        });
-        
-        try {
-          await voiceAlertService.playNoMatchAlert();
-        } catch (voiceError) {
-          console.error('Error en alerta de voz:', voiceError);
-        }
-        
-        toast({
-          title: "No hay coincidencias válidas",
-          description: "Continúa intentando. Los resultados se muestran abajo.",
-          variant: "default", // Changed from destructive to allow normal process continuation
-        });
-      }
 
     } catch (error) {
       console.error('Error durante la comparación:', error);
