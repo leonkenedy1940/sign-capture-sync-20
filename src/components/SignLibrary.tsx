@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { SignRecord, signDatabase } from '@/lib/indexeddb';
 import { useToast } from '@/hooks/use-toast';
-import { Play, Trash2, Clock, Hand } from 'lucide-react';
+import { Play, Trash2, Clock, Hand, Smartphone } from 'lucide-react';
 
 interface SignLibraryProps {
   refreshTrigger?: number;
@@ -169,57 +169,61 @@ export const SignLibrary: React.FC<SignLibraryProps> = ({ refreshTrigger }) => {
   }
 
   return (
-    <Card className="p-6 space-y-6">
+    <Card className="p-3 sm:p-6 space-y-4 sm:space-y-6">
       <div className="text-center space-y-2">
-        <h2 className="text-2xl font-bold bg-gradient-tech bg-clip-text text-transparent">
+        <h2 className="text-xl sm:text-2xl font-bold bg-gradient-tech bg-clip-text text-transparent">
           Biblioteca de Señas
         </h2>
-        <p className="text-muted-foreground">
+        <p className="text-sm sm:text-base text-muted-foreground">
           {signs.length} seña{signs.length !== 1 ? 's' : ''} guardada{signs.length !== 1 ? 's' : ''}
         </p>
       </div>
 
-      {/* Video player */}
+      {/* Video player - responsive */}
       {playingSign && (
         <div className="space-y-4">
           <div className="relative">
             <video ref={videoRef} className="hidden" />
             <canvas
               ref={canvasRef}
-              className="w-full rounded-lg border-2 border-accent shadow-glow-tech max-h-96"
+              className="w-full rounded-lg border-2 border-accent shadow-glow-tech max-h-[50vh] sm:max-h-96"
             />
-            <div className="absolute top-4 left-4">
-              <Badge className="bg-accent text-accent-foreground">
+            <div className="absolute top-2 sm:top-4 left-2 sm:left-4">
+              <Badge className="bg-accent text-accent-foreground text-xs sm:text-sm">
                 <Play className="w-3 h-3 mr-1" />
-                Reproduciendo
+                <span className="hidden sm:inline">Reproduciendo</span>
+                <span className="sm:hidden">▶</span>
               </Badge>
             </div>
           </div>
         </div>
       )}
 
-      {/* Signs grid */}
+      {/* Signs grid - responsive */}
       {signs.length === 0 ? (
         <div className="text-center py-8 text-muted-foreground">
-          No hay señas guardadas aún. Graba tu primera seña arriba.
+          <div className="space-y-2">
+            <p className="text-sm sm:text-base">No hay señas guardadas aún.</p>
+            <p className="text-xs sm:text-sm">Graba tu primera seña arriba.</p>
+          </div>
         </div>
       ) : (
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+        <div className="grid gap-3 sm:gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
           {signs.map((sign) => (
-            <Card key={sign.id} className="p-4 space-y-3">
+            <Card key={sign.id} className="p-3 sm:p-4 space-y-3">
               <div className="space-y-2">
-                <h3 className="font-semibold text-lg">{sign.name}</h3>
-                <div className="flex flex-wrap gap-2">
-                  <Badge variant="outline">
+                <h3 className="font-semibold text-base sm:text-lg truncate">{sign.name}</h3>
+                <div className="flex flex-wrap gap-1 sm:gap-2">
+                  <Badge variant="outline" className="text-xs">
                     <Clock className="w-3 h-3 mr-1" />
                     {sign.duration}s
                   </Badge>
-                  <Badge variant="outline">
+                  <Badge variant="outline" className="text-xs">
                     <Hand className="w-3 h-3 mr-1" />
-                    {sign.keyframes.length} frames
+                    {sign.keyframes.length}
                   </Badge>
                 </div>
-                <p className="text-sm text-muted-foreground">
+                <p className="text-xs sm:text-sm text-muted-foreground">
                   {sign.createdAt.toLocaleDateString('es-ES', {
                     year: 'numeric',
                     month: 'short',
@@ -235,15 +239,21 @@ export const SignLibrary: React.FC<SignLibraryProps> = ({ refreshTrigger }) => {
                   size="sm"
                   onClick={() => playSign(sign)}
                   disabled={playingSign === sign.id}
-                  className="flex-1"
+                  className="flex-1 text-xs sm:text-sm"
                 >
                   <Play className="w-3 h-3 mr-1" />
-                  {playingSign === sign.id ? 'Reproduciendo...' : 'Reproducir'}
+                  <span className="hidden sm:inline">
+                    {playingSign === sign.id ? 'Reproduciendo...' : 'Reproducir'}
+                  </span>
+                  <span className="sm:hidden">
+                    {playingSign === sign.id ? '...' : '▶'}
+                  </span>
                 </Button>
                 <Button
                   size="sm"
                   variant="destructive"
                   onClick={() => deleteSign(sign.id, sign.name)}
+                  className="px-2 sm:px-3"
                 >
                   <Trash2 className="w-3 h-3" />
                 </Button>
@@ -252,6 +262,14 @@ export const SignLibrary: React.FC<SignLibraryProps> = ({ refreshTrigger }) => {
           ))}
         </div>
       )}
+
+      {/* Mobile optimization indicator */}
+      <div className="flex justify-center sm:hidden pt-4">
+        <Badge variant="outline" className="text-xs">
+          <Smartphone className="w-3 h-3 mr-1" />
+          Vista móvil optimizada
+        </Badge>
+      </div>
     </Card>
   );
 };

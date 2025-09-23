@@ -6,8 +6,9 @@ import { HandDetector, FrameData } from '@/lib/mediapipe';
 import { signDatabase } from '@/lib/indexeddb';
 import { signComparisonService, ComparisonResult } from '@/lib/signComparison';
 import { voiceAlertService } from '@/lib/voiceAlert';
+import { enhancedLogger, LoggingContext } from '@/lib/enhancedLogging';
 import { useToast } from '@/hooks/use-toast';
-import { Camera, Search, Timer, CheckCircle, AlertCircle, Volume2 } from 'lucide-react';
+import { Camera, Search, Timer, CheckCircle, AlertCircle, Volume2, Smartphone } from 'lucide-react';
 import { HandLandmarkerResult } from '@mediapipe/tasks-vision';
 
 export const SignDetector: React.FC = () => {
@@ -122,8 +123,24 @@ export const SignDetector: React.FC = () => {
           ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
         }
       
+        const handsCount = results.landmarks ? results.landmarks.length : 0;
+        setHandsDetected(handsCount);
+
+        // Enhanced logging context
+        const loggingContext: LoggingContext = {
+          handsDetected: handsCount,
+          requiredHands: 1, // Can be configured based on sign requirements
+          timestamp: performance.now(),
+          frameQuality: results.landmarks && results.landmarks.length > 0 ? 0.8 : 0.3
+        };
+
+        // Check for ambient light and hands detection issues
+        if (isDetecting) {
+          enhancedLogger.checkHandsDetection(loggingContext);
+          enhancedLogger.logFrameQuality(loggingContext);
+        }
+      
         if (results.landmarks) {
-          setHandsDetected(results.landmarks.length);
           
           for (const landmarks of results.landmarks) {
             // Dibujar landmarks clave con mayor tamaño y colores diferentes
@@ -354,26 +371,30 @@ export const SignDetector: React.FC = () => {
         }))
       );
 
+      // Enhanced logging for comparison results
+      enhancedLogger.logComparisonResults(results, results.filter(r => r.similarity >= 0.85));
+
       if (match) {
         console.log('✓ Coincidencia encontrada:', match);
         setBestMatch(match);
         
+        // Use enhanced logging for valid signs
+        enhancedLogger.logValidSign(match.signName, match.similarity);
+        
         try {
           await voiceAlertService.playSignRecognitionAlert(match.signName);
-          
-          toast({
-            title: "¡Seña reconocida!",
-            description: `${match.signName} (${(match.similarity * 100).toFixed(1)}% similitud)`,
-          });
         } catch (voiceError) {
           console.error('Error en alerta de voz:', voiceError);
-          toast({
-            title: "Seña reconocida",
-            description: `${match.signName} (${(match.similarity * 100).toFixed(1)}% similitud)`,
-          });
         }
       } else {
         console.log('✗ No se encontraron coincidencias válidas');
+        
+        // Check if there were any detections below threshold and log them as invalid
+        const invalidSigns = results.filter(r => r.similarity < 0.85 && r.similarity > 0.3);
+        invalidSigns.forEach(result => {
+          enhancedLogger.logInvalidSign(result.signName, result.similarity);
+        });
+        
         try {
           await voiceAlertService.playNoMatchAlert();
         } catch (voiceError) {
@@ -381,9 +402,9 @@ export const SignDetector: React.FC = () => {
         }
         
         toast({
-          title: "No hay coincidencias",
-          description: "La seña no coincide con ninguna guardada (< 85%)",
-          variant: "destructive",
+          title: "No hay coincidencias válidas",
+          description: "Continúa intentando. Los resultados se muestran abajo.",
+          variant: "default", // Changed from destructive to allow normal process continuation
         });
       }
 
@@ -401,6 +422,17 @@ export const SignDetector: React.FC = () => {
 
   const startDetection = useCallback(async () => {
     if (!isInitialized) return;
+    
+    // Reset enhanced logging counters
+    enhancedLogger.resetCounters();
+    
+    const loggingContext: LoggingContext = {
+      handsDetected: handsDetected,
+      requiredHands: 1,
+      timestamp: performance.now()
+    };
+    
+    enhancedLogger.logDetectionStart(loggingContext);
     
     setPreparationTime(3);
     setDetectionKeyframes([]);

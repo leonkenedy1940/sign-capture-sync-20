@@ -1,0 +1,30 @@
+import { CapacitorConfig } from '@capacitor/cli';
+
+const config: CapacitorConfig = {
+  appId: 'app.lovable.358ac9a0142f49609a4a5c49770d258d',
+  appName: 'sign-capture-sync-20',
+  webDir: 'dist',
+  server: {
+    url: 'https://358ac9a0-142f-4960-9a4a-5c49770d258d.lovableproject.com?forceHideBadge=true',
+    cleartext: true
+  },
+  plugins: {
+    SplashScreen: {
+      launchShowDuration: 3000,
+      launchAutoHide: true,
+      backgroundColor: "#1a1a1a",
+      androidSplashResourceName: "splash",
+      androidScaleType: "CENTER_CROP",
+      showSpinner: true,
+      androidSpinnerStyle: "large",
+      iosSpinnerStyle: "small",
+      spinnerColor: "#22d3ee",
+      splashFullScreen: true,
+      splashImmersive: true,
+      layoutName: "launch_screen",
+      useDialog: true,
+    }
+  }
+};
+
+export default config;
