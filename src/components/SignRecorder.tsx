@@ -134,9 +134,11 @@ export const SignRecorder: React.FC<SignRecorderProps> = ({ onSignSaved }) => {
             console.log('✋ Landmarks encontrados, extrayendo datos...');
             
             try {
+              const extractedData = HandDetector.extractHandData(results);
               const frameData: FrameData = {
                 timestamp: performance.now(),
-                hands: HandDetector.extractHandData(results)
+                hands: extractedData.hands,
+                face: extractedData.face
               };
               
               console.log('📊 Datos extraídos del frame:', {

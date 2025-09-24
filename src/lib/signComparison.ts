@@ -30,20 +30,55 @@ export class SignComparisonService {
   }
 
   /**
-   * Extrae características básicas y confiables de un frame
+   * Normaliza las posiciones de las manos usando la cara como referencia
+   */
+  private normalizeHandsWithFace(frameData: FrameData): FrameData {
+    if (!frameData.face || frameData.face.landmarks.length === 0) {
+      return frameData; // Sin cara, devolver original
+    }
+
+    const faceLandmarks = frameData.face.landmarks;
+    // Usar puntos clave de la cara como referencia (nariz: índice 1, frente: índice 10)
+    const nosePoint = faceLandmarks[1] || faceLandmarks[0];
+    const foreheadPoint = faceLandmarks[10] || faceLandmarks[0];
+    
+    // Calcular escala basada en el tamaño de la cara
+    const faceHeight = Math.abs(foreheadPoint.y - nosePoint.y);
+    const faceScale = faceHeight > 0 ? 1 / faceHeight : 1;
+
+    const normalizedHands = frameData.hands.map(hand => ({
+      ...hand,
+      landmarks: hand.landmarks.map(landmark => ({
+        x: (landmark.x - nosePoint.x) * faceScale,
+        y: (landmark.y - nosePoint.y) * faceScale,
+        z: (landmark.z - nosePoint.z) * faceScale
+      }))
+    }));
+
+    return {
+      ...frameData,
+      hands: normalizedHands
+    };
+  }
+
+  /**
+   * Extrae características mejoradas de un frame usando la cara como referencia
    */
   private extractFeatures(frameData: FrameData): number[] {
     const features: number[] = [];
     
-    frameData.hands.forEach(hand => {
+    // Normalizar usando la cara si está disponible
+    const normalizedFrame = this.normalizeHandsWithFace(frameData);
+    
+    normalizedFrame.hands.forEach(hand => {
       if (hand.landmarks.length !== 21) return;
       
-      // Usar landmarks básicos sin complicaciones
+      // Landmarks normalizados
       hand.landmarks.forEach(landmark => {
         features.push(landmark.x, landmark.y, landmark.z);
       });
 
-      // Agregar ángulos básicos entre dedos clave
+      // Ángulos entre dedos clave
       const wrist = hand.landmarks[0];
       const thumb = hand.landmarks[4];
       const index = hand.landmarks[8];
@@ -51,7 +86,7 @@ export class SignComparisonService {
       const ring = hand.landmarks[16];
       const pinky = hand.landmarks[20];
 
-      // Calcular ángulos simples entre la muñeca y cada punta de dedo
+      // Calcular ángulos relativos a la muñeca
       const angles = [thumb, index, middle, ring, pinky].map(tip => {
         const dx = tip.x - wrist.x;
         const dy = tip.y - wrist.y;
@@ -59,14 +94,25 @@ export class SignComparisonService {
       });
       
       features.push(...angles);
+
+      // Distancias entre puntos clave para mejor precisión
+      const keyDistances = [
+        this.euclideanDistance([thumb.x, thumb.y, thumb.z], [index.x, index.y, index.z]),
+        this.euclideanDistance([index.x, index.y, index.z], [middle.x, middle.y, middle.z]),
+        this.euclideanDistance([middle.x, middle.y, middle.z], [ring.x, ring.y, ring.z]),
+        this.euclideanDistance([ring.x, ring.y, ring.z], [pinky.x, pinky.y, pinky.z]),
+        this.euclideanDistance([wrist.x, wrist.y, wrist.z], [middle.x, middle.y, middle.z])
+      ];
+      
+      features.push(...keyDistances);
     });
 
     // Normalizar tamaño del vector para una o dos manos
-    while (features.length < 130) { // 2 manos * (21*3 + 5 ángulos)
+    while (features.length < 140) { // 2 manos * (21*3 + 5 ángulos + 5 distancias)
       features.push(0);
     }
 
-    return features.slice(0, 130);
+    return features.slice(0, 140);
   }
 
   /**

@@ -257,9 +257,11 @@ export const SignDetector: React.FC = () => {
         if (isDetecting) {
           // Solo capturar keyframes cuando hay manos detectadas
           if (results.landmarks && results.landmarks.length > 0) {
+            const extractedData = HandDetector.extractHandData(results);
             const frameData: FrameData = {
               timestamp: performance.now(),
-              hands: HandDetector.extractHandData(results)
+              hands: extractedData.hands,
+              face: extractedData.face
             };
             
             // Validar que los datos están completos - MISMA VALIDACION
@@ -589,7 +591,7 @@ export const SignDetector: React.FC = () => {
             <Badge className="bg-success text-success-foreground">
               <CheckCircle className="w-3 h-3 mr-1" />
               <Volume2 className="w-3 h-3 mr-1" />
-              {bestMatch.signName} ({(bestMatch.similarity * 100).toFixed(1)}%)
+              {bestMatch.signName}
             </Badge>
           </div>
         )}
@@ -700,10 +702,10 @@ export const SignDetector: React.FC = () => {
                       <span className="font-medium">{result.signName}</span>
                     </div>
                     <div className="flex items-center gap-2">
-                      <span className={`text-sm font-mono ${
-                        result.isMatch ? 'text-success' : 'text-muted-foreground'
+                      <span className={`text-sm px-2 py-1 rounded ${
+                        result.isMatch ? 'bg-success/20 text-success' : 'bg-muted text-muted-foreground'
                       }`}>
-                        {(result.similarity * 100).toFixed(1)}%
+                        {result.isMatch ? 'Detectada' : 'No detectada'}
                       </span>
                       {result.isMatch && (
                         <CheckCircle className="w-4 h-4 text-success" />
