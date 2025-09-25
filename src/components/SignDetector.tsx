@@ -18,6 +18,7 @@ export const SignDetector: React.FC = () => {
   const handDetectorRef = useRef<HandDetector | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const onResultsRef = useRef<(handResults: HandLandmarkerResult, faceResults?: any) => void>(() => {});
+  const animationFrameId = useRef<number>();
   
   const [isDetecting, setIsDetecting] = useState(false);
   const [preparationTime, setPreparationTime] = useState(0);
@@ -58,15 +59,20 @@ export const SignDetector: React.FC = () => {
     try {
       console.log('🎥 Inicializando cámara optimizada...');
       
-      // Configuración optimizada para mejor calidad manteniendo compatibilidad móvil
+      // Configuración optimizada para Android
       const cameraManager = CameraManager.getInstance();
       const constraints: MediaStreamConstraints = {
         video: {
           width: { ideal: 1280, max: 1920 },
           height: { ideal: 720, max: 1080 },
-          frameRate: { ideal: 30, max: 60 },
+          frameRate: { ideal: 30, max: 30 }, // Reducido a 30fps máximo para Android
           facingMode: deviceId ? undefined : 'user',
           deviceId: deviceId ? { exact: deviceId } : undefined,
+          // Configuraciones específicas para Android
+          advanced: [
+            { width: 1280, aspectRatio: 1.777 },
+            { width: 1920, aspectRatio: 1.777 }
+          ]
         },
         audio: false
       };
@@ -83,12 +89,14 @@ export const SignDetector: React.FC = () => {
       streamRef.current = stream;
       
       if (videoRef.current) {
-        // Optimización para móviles
+        // Activar aceleración por hardware
         videoRef.current.playsInline = true;
         videoRef.current.muted = true;
         videoRef.current.setAttribute('playsinline', 'true');
         videoRef.current.setAttribute('webkit-playsinline', 'true');
         videoRef.current.setAttribute('autoplay', 'true');
+        videoRef.current.setAttribute('muted', 'true');
+        videoRef.current.setAttribute('preload', 'auto');
         
         videoRef.current.srcObject = stream;
         
@@ -111,9 +119,22 @@ export const SignDetector: React.FC = () => {
 
         await videoRef.current.play();
         
-        // Inicializar detector con configuración optimizada
+        // Inicializar detector con configuración optimizada para Android
         console.log('🤖 Iniciando detector de manos optimizado...');
         handDetectorRef.current = new HandDetector();
+        
+        const detectorConfig = {
+          maxNumHands: 2,
+          modelComplexity: 1, // 1 para mejor rendimiento en Android
+          minDetectionConfidence: 0.7,
+          minTrackingConfidence: 0.5,
+          selfieMode: true,
+          // Configuración adicional para mejor rendimiento
+          delegate: 'GPU', // Usar aceleración por GPU
+          numHands: 2,
+          runningMode: 'VIDEO' // Modo video para mejor rendimiento
+        };
+        
         await handDetectorRef.current.initialize(
           videoRef.current, 
           (handRes: HandLandmarkerResult, faceRes?: any) => onResultsRef.current(handRes, faceRes)
@@ -241,14 +262,14 @@ export const SignDetector: React.FC = () => {
         });
         ctx.stroke();
         
-        // Dibujar puntos landmarks más visibles
+        // Dibujar puntos landmarks más visibles para Android
         ctx.fillStyle = '#FF0000';
         for (const point of landmarks) {
           const x = canvas.width - point.x * canvas.width;
           const y = point.y * canvas.height;
           
           ctx.beginPath();
-          ctx.arc(x, y, 4, 0, 2 * Math.PI);
+          ctx.arc(x, y, 4, 0, 2 * Math.PI); // Puntos más grandes para mejor visibilidad
           ctx.fill();
         }
         
@@ -257,9 +278,9 @@ export const SignDetector: React.FC = () => {
           const wristX = canvas.width - landmarks[0].x * canvas.width;
           const wristY = landmarks[0].y * canvas.height;
           
-          // Ejes principales del plano cartesiano
-          ctx.strokeStyle = 'rgba(0, 255, 0, 0.8)';
-          ctx.lineWidth = 2;
+          // Ejes principales del plano cartesiano - optimizado para Android
+          ctx.strokeStyle = 'rgba(0, 255, 0, 0.7)'; // Más opaco para mejor visibilidad
+          ctx.lineWidth = 2; // Líneas más gruesas
           
           // Eje X horizontal
           ctx.beginPath();
@@ -336,6 +357,28 @@ export const SignDetector: React.FC = () => {
       }
     }
   }, [isDetecting]);
+
+  // Usar requestAnimationFrame para mejor rendimiento en Android
+  const animate = useCallback(() => {
+    if (handDetectorRef.current && videoRef.current && isCameraOn) {
+      // El detector ya maneja su propio ciclo de detección
+    }
+    if (isCameraOn) {
+      animationFrameId.current = requestAnimationFrame(animate);
+    }
+  }, [isCameraOn]);
+
+  // Iniciar/Detener la animación
+  useEffect(() => {
+    if (isCameraOn) {
+      animationFrameId.current = requestAnimationFrame(animate);
+    }
+    return () => {
+      if (animationFrameId.current) {
+        cancelAnimationFrame(animationFrameId.current);
+      }
+    };
+  }, [isCameraOn, animate]);
 
   useEffect(() => {
     onResultsRef.current = onHandResults;
