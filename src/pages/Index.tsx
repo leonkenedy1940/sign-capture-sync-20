@@ -63,7 +63,7 @@ const Index = () => {
               </div>
             </div>
             <p className="text-base sm:text-lg lg:text-xl text-muted-foreground max-w-2xl mx-auto px-4">
-              Sistema completo para grabar, detectar y analizar señas dinámicas con IA
+              Graba, analiza y compara señas de manera sencilla
             </p>
             <div className="flex justify-center sm:hidden">
               <ConnectionStatus />
@@ -108,7 +108,7 @@ const Index = () => {
         <div className="flex justify-center mt-8 sm:hidden">
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
             <Smartphone className="w-3 h-3" />
-            <span>Interfaz optimizada para móviles</span>
+            <span>Diseñado para móviles</span>
           </div>
         </div>
       </main>
@@ -116,8 +116,7 @@ const Index = () => {
       {/* Footer - Responsive */}
       <footer className="border-t border-border/50 bg-card/50 backdrop-blur mt-12 sm:mt-16">
         <div className="container mx-auto px-3 sm:px-4 py-4 sm:py-6 text-center text-xs sm:text-sm text-muted-foreground">
-          <p>Sistema de captura de señas con detección de keypoints en tiempo real</p>
-          <p className="text-xs text-muted-foreground/70 mt-1">Compatible con Android mediante Capacitor</p>
+          <p>Aplicación para grabar y comparar señas</p>
         </div>
       </footer>
     </div>
