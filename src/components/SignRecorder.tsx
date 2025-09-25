@@ -19,7 +19,7 @@ export const SignRecorder: React.FC<SignRecorderProps> = ({ onSignSaved }) => {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const handDetectorRef = useRef<HandDetector | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
-  const onResultsRef = useRef<(results: HandLandmarkerResult) => void>(() => {});
+  const onResultsRef = useRef<(handResults: HandLandmarkerResult, faceResults?: any) => void>(() => {});
   const isRecordingRef = useRef(false);
   
   const [isRecording, setIsRecording] = useState(false);
@@ -346,7 +346,7 @@ export const SignRecorder: React.FC<SignRecorderProps> = ({ onSignSaved }) => {
         
         console.log('🤖 Inicializando detector de manos...');
         handDetectorRef.current = new HandDetector();
-        await handDetectorRef.current.initialize(videoRef.current, (res: HandLandmarkerResult) => onResultsRef.current(res));
+        await handDetectorRef.current.initialize(videoRef.current, (handRes: HandLandmarkerResult, faceRes?: any) => onResultsRef.current(handRes, faceRes));
         console.log('✅ Detector de manos inicializado');
         
         setIsInitialized(true);

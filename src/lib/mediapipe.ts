@@ -53,21 +53,21 @@ export class HandDetector {
         },
         numHands: 2,
         runningMode: "VIDEO",
-        minHandDetectionConfidence: 0.3,
-        minHandPresenceConfidence: 0.3,
-        minTrackingConfidence: 0.3
+        minHandDetectionConfidence: 0.1,
+        minHandPresenceConfidence: 0.1,
+        minTrackingConfidence: 0.1
       });
 
-      // Initialize Face Landmarker
+      // Initialize Face Landmarker with more sensitive settings
       this.faceLandmarker = await FaceLandmarker.createFromOptions(vision, {
         baseOptions: {
           modelAssetPath: "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task"
         },
         runningMode: "VIDEO",
         numFaces: 1,
-        minFaceDetectionConfidence: 0.3,
-        minFacePresenceConfidence: 0.3,
-        minTrackingConfidence: 0.3
+        minFaceDetectionConfidence: 0.1,
+        minFacePresenceConfidence: 0.1,
+        minTrackingConfidence: 0.1
       });
       
       console.log('HandDetector y FaceLandmarker inicializados correctamente');

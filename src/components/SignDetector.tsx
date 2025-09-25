@@ -16,7 +16,7 @@ export const SignDetector: React.FC = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const handDetectorRef = useRef<HandDetector | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
-  const onResultsRef = useRef<(results: HandLandmarkerResult) => void>(() => {});
+  const onResultsRef = useRef<(handResults: HandLandmarkerResult, faceResults?: any) => void>(() => {});
   
   const [isDetecting, setIsDetecting] = useState(false);
   const [preparationTime, setPreparationTime] = useState(0);
@@ -85,7 +85,7 @@ export const SignDetector: React.FC = () => {
         
         console.log('🤖 Inicializando detector de manos en detector...');
         handDetectorRef.current = new HandDetector();
-        await handDetectorRef.current.initialize(videoRef.current, (res: HandLandmarkerResult) => onResultsRef.current(res));
+        await handDetectorRef.current.initialize(videoRef.current, (handRes: HandLandmarkerResult, faceRes?: any) => onResultsRef.current(handRes, faceRes));
         console.log('✅ Detector de manos inicializado en detector');
         
         setIsInitialized(true);
