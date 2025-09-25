@@ -8,8 +8,9 @@ import { signComparisonService, ComparisonResult } from '@/lib/signComparison';
 import { voiceAlertService } from '@/lib/voiceAlert';
 import { enhancedLogger, LoggingContext } from '@/lib/enhancedLogging';
 import { useToast } from '@/hooks/use-toast';
-import { Camera, Search, Timer, CheckCircle, AlertCircle, Volume2, Smartphone } from 'lucide-react';
+import { Camera, Search, Timer, CheckCircle, AlertCircle, Volume2, Smartphone, RefreshCw } from 'lucide-react';
 import { HandLandmarkerResult } from '@mediapipe/tasks-vision';
+import { CameraManager, CameraDevice } from '@/lib/cameraUtils';
 
 export const SignDetector: React.FC = () => {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -28,6 +29,8 @@ export const SignDetector: React.FC = () => {
   const [isComparing, setIsComparing] = useState(false);
   const [comparisonResults, setComparisonResults] = useState<ComparisonResult[]>([]);
   const [bestMatch, setBestMatch] = useState<ComparisonResult | null>(null);
+  const [availableCameras, setAvailableCameras] = useState<CameraDevice[]>([]);
+  const [currentCameraId, setCurrentCameraId] = useState<string | undefined>();
   
   const { toast } = useToast();
 
@@ -49,21 +52,14 @@ export const SignDetector: React.FC = () => {
     setIsCameraOn(false);
   }, []);
 
-  const initializeCamera = useCallback(async () => {
+  const initializeCamera = useCallback(async (deviceId?: string) => {
     // Stop any existing camera first
     stopCamera();
     
     try {
       console.log('🎥 Inicializando cámara en detector...');
-      const stream = await navigator.mediaDevices.getUserMedia({ 
-        video: { 
-          width: { ideal: 320, max: 640 }, 
-          height: { ideal: 240, max: 480 },
-          frameRate: { ideal: 30, max: 30 },
-          facingMode: 'user',
-          aspectRatio: 4/3
-        } 
-      });
+      const cameraManager = CameraManager.getInstance();
+      const stream = await cameraManager.createCameraStream(deviceId);
       
       streamRef.current = stream;
       
@@ -106,6 +102,46 @@ export const SignDetector: React.FC = () => {
       });
     }
   }, [toast, stopCamera]);
+
+  const switchCamera = useCallback(async () => {
+    const cameraManager = CameraManager.getInstance();
+    const nextCamera = cameraManager.getNextCamera(currentCameraId);
+    
+    if (nextCamera) {
+      console.log('🔄 Cambiando a cámara:', nextCamera.label);
+      setCurrentCameraId(nextCamera.deviceId);
+      await initializeCamera(nextCamera.deviceId);
+      
+      toast({
+        title: "Cámara cambiada",
+        description: nextCamera.label,
+      });
+    } else {
+      toast({
+        title: "Solo una cámara disponible",
+        description: "No hay otras cámaras para cambiar",
+      });
+    }
+  }, [currentCameraId, initializeCamera, toast]);
+
+  // Initialize cameras list on component mount
+  useEffect(() => {
+    const loadCameras = async () => {
+      const cameraManager = CameraManager.getInstance();
+      const cameras = await cameraManager.getAvailableCameras();
+      setAvailableCameras(cameras);
+      
+      // Set default camera (preferably front camera)
+      const frontCamera = cameraManager.getCameraByFacing('front');
+      if (frontCamera) {
+        setCurrentCameraId(frontCamera.deviceId);
+      } else if (cameras.length > 0) {
+        setCurrentCameraId(cameras[0].deviceId);
+      }
+    };
+    
+    loadCameras();
+  }, []);
 
   const onHandResults = useCallback((results: HandLandmarkerResult, faceResults?: any) => {
     if (canvasRef.current && videoRef.current) {
@@ -641,9 +677,9 @@ export const SignDetector: React.FC = () => {
     if (isCameraOn) {
       stopCamera();
     } else {
-      await initializeCamera();
+      await initializeCamera(currentCameraId);
     }
-  }, [isCameraOn, stopCamera, initializeCamera]);
+  }, [isCameraOn, stopCamera, initializeCamera, currentCameraId]);
 
   useEffect(() => {
     return () => {
@@ -761,6 +797,17 @@ export const SignDetector: React.FC = () => {
           <Camera className="w-4 h-4 mr-2" />
           {isCameraOn ? "Apagar Cámara" : "Prender Cámara"}
         </Button>
+
+        {isCameraOn && availableCameras.length > 1 && (
+          <Button
+            onClick={switchCamera}
+            variant="outline"
+            className="w-full"
+          >
+            <RefreshCw className="w-4 h-4 mr-2" />
+            Cambiar Cámara ({availableCameras.find(c => c.deviceId === currentCameraId)?.label || 'Actual'})
+          </Button>
+        )}
 
         {isCameraOn && (
           <Button
