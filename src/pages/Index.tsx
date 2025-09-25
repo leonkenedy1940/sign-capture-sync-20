@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { SignRecorder } from '@/components/SignRecorder';
 import { SignDetector } from '@/components/SignDetector';
 import { SignLibrary } from '@/components/SignLibrary';
-import { signDatabase } from '@/lib/indexeddb';
+import { supabaseSignService } from '@/lib/supabaseSignService';
 import { useToast } from '@/hooks/use-toast';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Hand, Video, Library, Search, Smartphone } from 'lucide-react';
@@ -13,11 +13,11 @@ const Index = () => {
 
   useEffect(() => {
     // Initialize database
-    signDatabase.initialize().catch((error) => {
+    supabaseSignService.initialize().catch((error) => {
       console.error('Failed to initialize database:', error);
       toast({
-        title: "Error de base de datos",
-        description: "No se pudo inicializar el almacenamiento local",
+        title: "Error de autenticación",
+        description: "Por favor, inicia sesión para usar esta funcionalidad",
         variant: "destructive",
       });
     });

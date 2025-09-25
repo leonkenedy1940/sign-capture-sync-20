@@ -4,7 +4,7 @@ import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { HandDetector, FrameData } from '@/lib/mediapipe';
-import { signDatabase } from '@/lib/indexeddb';
+import { supabaseSignService } from '@/lib/supabaseSignService';
 import { useToast } from '@/hooks/use-toast';
 import { Video, Square, Save, Camera, RefreshCw } from 'lucide-react';
 import { HandLandmarkerResult } from '@mediapipe/tasks-vision';
@@ -589,7 +589,7 @@ export const SignRecorder: React.FC<SignRecorderProps> = ({ onSignSaved }) => {
     try {
       const videoBlob = new Blob(recordedChunks, { type: 'video/webm' });
       
-      await signDatabase.saveSign({
+      await supabaseSignService.saveSign({
         name: signName.trim(),
         videoBlob,
         keyframes: validKeyframes, // Guardar solo keyframes válidos

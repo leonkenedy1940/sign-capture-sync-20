@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { SignRecord, signDatabase } from '@/lib/indexeddb';
+import { SignRecord, supabaseSignService } from '@/lib/supabaseSignService';
 import { useToast } from '@/hooks/use-toast';
 import { Play, Trash2, Clock, Hand, Smartphone } from 'lucide-react';
 
@@ -21,9 +21,9 @@ export const SignLibrary: React.FC<SignLibraryProps> = ({ refreshTrigger }) => {
 
   const loadSigns = async () => {
     try {
-      await signDatabase.initialize();
-      const allSigns = await signDatabase.getAllSigns();
-      setSigns(allSigns.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime()));
+      await supabaseSignService.initialize();
+      const allSigns = await supabaseSignService.getAllSigns();
+      setSigns(allSigns.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()));
     } catch (error) {
       console.error('Error loading signs:', error);
       toast({
@@ -41,7 +41,9 @@ export const SignLibrary: React.FC<SignLibraryProps> = ({ refreshTrigger }) => {
       setPlayingSign(sign.id);
       
       if (videoRef.current && canvasRef.current) {
-        const videoURL = URL.createObjectURL(sign.videoBlob);
+        // Get video blob from URL
+        const videoBlob = await supabaseSignService.getVideoBlob(sign.video_url || '');
+        const videoURL = URL.createObjectURL(videoBlob);
         videoRef.current.src = videoURL;
         
         const canvas = canvasRef.current;
@@ -164,7 +166,7 @@ export const SignLibrary: React.FC<SignLibraryProps> = ({ refreshTrigger }) => {
 
   const deleteSign = async (id: string, name: string) => {
     try {
-      await signDatabase.deleteSign(id);
+      await supabaseSignService.deleteSign(id);
       setSigns(signs.filter(sign => sign.id !== id));
       toast({
         title: "Seña eliminada",
@@ -248,7 +250,7 @@ export const SignLibrary: React.FC<SignLibraryProps> = ({ refreshTrigger }) => {
                   </Badge>
                 </div>
                 <p className="text-xs sm:text-sm text-muted-foreground">
-                  {sign.createdAt.toLocaleDateString('es-ES', {
+                  {new Date(sign.created_at).toLocaleDateString('es-ES', {
                     year: 'numeric',
                     month: 'short',
                     day: 'numeric',
