@@ -122,8 +122,8 @@ export class HandDetector {
       
       // Throttling más agresivo para Android - solo 5 FPS para mejor rendimiento
       if (this.isAndroid) {
-        if (currentTime - this.lastProcessTime < 200) { // 5 FPS máximo en Android
-          setTimeout(() => this.detectHands(videoElement), 50);
+        if (currentTime - this.lastProcessTime < 66) { // ~15 FPS máximo en Android (fluido)
+          setTimeout(() => this.detectHands(videoElement), 16);
           return;
         }
         this.lastProcessTime = currentTime;
@@ -160,7 +160,7 @@ export class HandDetector {
     
     // Control de framerate optimizado para móvil
     if (this.isAndroid) {
-      setTimeout(() => this.detectHands(videoElement), 200); // 5 FPS en Android para mejor rendimiento
+      setTimeout(() => this.detectHands(videoElement), 66); // ~15 FPS en Android para mayor fluidez
     } else {
       this.animationFrameId = requestAnimationFrame(() => this.detectHands(videoElement));
     }

@@ -156,10 +156,19 @@ export const SignDetector: React.FC = () => {
         // Detección de móvil para optimizaciones de renderizado
         const isMobile = /Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
         
-        // Use immediate drawing instead of requestAnimationFrame for lower latency
+        // Sincronizar tamaño del canvas con el tamaño real del video (evita blur y grilla invisible en móvil)
         if (videoRef.current && videoRef.current.readyState >= 2) {
+          const v = videoRef.current;
+          const targetW = v.videoWidth || canvas.clientWidth || 320;
+          const targetH = v.videoHeight || canvas.clientHeight || 240;
+          if (canvas.width !== targetW || canvas.height !== targetH) {
+            canvas.width = targetW;
+            canvas.height = targetH;
+          }
+          
+          // Dibujar frame actual
           ctx.clearRect(0, 0, canvas.width, canvas.height);
-          ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
+          ctx.drawImage(v, 0, 0, canvas.width, canvas.height);
         }
       
         const handsCount = results.landmarks ? results.landmarks.length : 0;
