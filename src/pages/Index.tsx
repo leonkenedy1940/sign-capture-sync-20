@@ -1,129 +1,44 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { SignRecorder } from '@/components/SignRecorder';
 import { SignDetector } from '@/components/SignDetector';
 import { SignLibrary } from '@/components/SignLibrary';
-import { hybridSignService } from '@/lib/hybridSignService';
-import { supabase } from '@/integrations/supabase/client';
-import { User } from '@supabase/supabase-js';
+import { supabaseSignService } from '@/lib/supabaseSignService';
 import { useToast } from '@/hooks/use-toast';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { ConnectionStatus } from '@/components/ConnectionStatus';
-import { Hand, Video, Library, Search, Smartphone, LogOut } from 'lucide-react';
+import { Hand, Video, Library, Search, Smartphone } from 'lucide-react';
 
 const Index = () => {
   const [refreshTrigger, setRefreshTrigger] = useState(0);
-  const [user, setUser] = useState<User | null>(null);
   const [isInitialized, setIsInitialized] = useState(false);
   const { toast } = useToast();
-  const navigate = useNavigate();
 
   useEffect(() => {
-    // Set up auth state listener
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        setUser(session?.user ?? null);
-        
-        if (session?.user) {
-          // Initialize services when user is authenticated
-          try {
-            await hybridSignService.initialize();
-            setIsInitialized(true);
-            console.log('🚀 Servicios inicializados correctamente');
-          } catch (error) {
-            console.error('❌ Error inicializando servicios:', error);
-            toast({
-              title: "Error",
-              description: "Error inicializando la aplicación",
-              variant: "destructive",
-            });
-          }
-        } else {
-          setIsInitialized(false);
-        }
-      }
-    );
-
-    // Check for existing session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null);
-      
-      if (session?.user) {
-        hybridSignService.initialize().then(() => {
-          setIsInitialized(true);
-          console.log('🚀 Servicios inicializados correctamente');
-        }).catch((error) => {
-          console.error('❌ Error inicializando servicios:', error);
-          toast({
-            title: "Error",
-            description: "Error inicializando la aplicación",
-            variant: "destructive",
-          });
-        });
-      }
-    });
-
-    return () => subscription.unsubscribe();
-  }, [toast]);
-
-  const handleSignOut = async () => {
-    try {
-      await supabase.auth.signOut();
-      toast({
-        title: "Sesión cerrada",
-        description: "Has cerrado sesión correctamente",
-      });
-    } catch (error) {
+    // Initialize Supabase service
+    supabaseSignService.initialize().then(() => {
+      setIsInitialized(true);
+      console.log('🚀 Supabase inicializado correctamente');
+    }).catch((error) => {
+      console.error('❌ Error inicializando Supabase:', error);
       toast({
         title: "Error",
-        description: "Error cerrando sesión",
+        description: "Error inicializando la aplicación",
         variant: "destructive",
       });
-    }
-  };
+    });
+  }, [toast]);
 
   const handleSignSaved = () => {
     setRefreshTrigger(prev => prev + 1);
   };
 
-  if (!user) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background p-4">
-        <Card className="w-full max-w-md text-center">
-          <CardHeader>
-            <div className="flex justify-center mb-4">
-              <div className="p-3 rounded-full bg-gradient-tech shadow-glow-tech">
-                <Hand className="w-8 h-8 text-primary-foreground" />
-              </div>
-            </div>
-            <CardTitle className="text-2xl font-bold bg-gradient-tech bg-clip-text text-transparent">
-              Sistema de Señas
-            </CardTitle>
-            <CardDescription>
-              Necesitas iniciar sesión para guardar tus señas en Supabase
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <Button onClick={() => navigate('/auth')} className="w-full">
-              Iniciar Sesión / Registrarse
-            </Button>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
-
   if (!isInitialized) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
-        <Card className="w-full max-w-md text-center">
-          <CardContent className="pt-6">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
-            <p>Inicializando servicios...</p>
-          </CardContent>
-        </Card>
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
+          <p>Inicializando Supabase...</p>
+        </div>
       </div>
     );
   }
@@ -143,17 +58,8 @@ const Index = () => {
                 Sistema de Señas
               </h1>
               </div>
-              <div className="flex items-center gap-2 sm:gap-4">
-                <div className="hidden sm:flex">
-                  <ConnectionStatus />
-                </div>
-                <div className="text-xs sm:text-sm text-muted-foreground hidden sm:block">
-                  {user.email}
-                </div>
-                <Button variant="ghost" size="sm" onClick={handleSignOut}>
-                  <LogOut className="w-4 h-4" />
-                  <span className="hidden sm:inline ml-2">Salir</span>
-                </Button>
+              <div className="hidden sm:flex">
+                <ConnectionStatus />
               </div>
             </div>
             <p className="text-base sm:text-lg lg:text-xl text-muted-foreground max-w-2xl mx-auto px-4">

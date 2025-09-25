@@ -20,14 +20,8 @@ export class SupabaseSignService {
     duration: number 
   }): Promise<string> {
     try {
-      // Get current user
-      const { data: { user }, error: userError } = await supabase.auth.getUser();
-      if (userError || !user) {
-        throw new Error('Usuario no autenticado');
-      }
-
       // Upload video to storage
-      const videoFileName = `${user.id}/${crypto.randomUUID()}.webm`;
+      const videoFileName = `public/${crypto.randomUUID()}.webm`;
       const { error: uploadError } = await supabase.storage
         .from('sign-videos')
         .upload(videoFileName, sign.videoBlob, {
@@ -48,7 +42,7 @@ export class SupabaseSignService {
       const { data, error } = await supabase
         .from('signs')
         .insert({
-          user_id: user.id,
+          user_id: null, // No user required
           name: sign.name,
           video_url: publicUrl,
           keyframes: sign.keyframes as any,
@@ -71,16 +65,9 @@ export class SupabaseSignService {
 
   async getAllSigns(): Promise<SignRecord[]> {
     try {
-      // Get current user
-      const { data: { user }, error: userError } = await supabase.auth.getUser();
-      if (userError || !user) {
-        throw new Error('Usuario no autenticado');
-      }
-
       const { data, error } = await supabase
         .from('signs')
         .select('*')
-        .eq('user_id', user.id)
         .order('created_at', { ascending: false });
 
       if (error) {
@@ -100,17 +87,10 @@ export class SupabaseSignService {
 
   async getSign(id: string): Promise<SignRecord | null> {
     try {
-      // Get current user
-      const { data: { user }, error: userError } = await supabase.auth.getUser();
-      if (userError || !user) {
-        throw new Error('Usuario no autenticado');
-      }
-
       const { data, error } = await supabase
         .from('signs')
         .select('*')
         .eq('id', id)
-        .eq('user_id', user.id)
         .single();
 
       if (error) {
@@ -130,12 +110,6 @@ export class SupabaseSignService {
 
   async deleteSign(id: string): Promise<void> {
     try {
-      // Get current user
-      const { data: { user }, error: userError } = await supabase.auth.getUser();
-      if (userError || !user) {
-        throw new Error('Usuario no autenticado');
-      }
-
       // Get sign info first to delete video file
       const sign = await this.getSign(id);
       
@@ -143,8 +117,7 @@ export class SupabaseSignService {
       const { error } = await supabase
         .from('signs')
         .delete()
-        .eq('id', id)
-        .eq('user_id', user.id);
+        .eq('id', id);
 
       if (error) {
         console.error('Error deleting sign:', error);
@@ -179,11 +152,8 @@ export class SupabaseSignService {
 
   // Initialize method for compatibility with existing code
   async initialize(): Promise<void> {
-    // Check if user is authenticated
-    const { data: { user }, error } = await supabase.auth.getUser();
-    if (error || !user) {
-      throw new Error('Usuario no autenticado. Por favor, inicia sesión.');
-    }
+    // No authentication required anymore
+    console.log('✅ Supabase inicializado sin autenticación');
   }
 }
 

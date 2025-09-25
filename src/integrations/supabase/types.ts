@@ -22,7 +22,7 @@ export type Database = {
           keyframes: Json | null
           name: string
           updated_at: string
-          user_id: string
+          user_id: string | null
           video_url: string | null
         }
         Insert: {
@@ -32,7 +32,7 @@ export type Database = {
           keyframes?: Json | null
           name: string
           updated_at?: string
-          user_id: string
+          user_id?: string | null
           video_url?: string | null
         }
         Update: {
@@ -42,7 +42,7 @@ export type Database = {
           keyframes?: Json | null
           name?: string
           updated_at?: string
-          user_id?: string
+          user_id?: string | null
           video_url?: string | null
         }
         Relationships: []
