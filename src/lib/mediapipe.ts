@@ -123,10 +123,10 @@ export class HandDetector {
     if (videoElement.readyState >= 2 && this.handLandmarker && !this.isProcessing) {
       const currentTime = performance.now();
       
-      // Throttling para Android - procesar cada 3 frames en lugar de cada frame
+      // Throttling más agresivo para Android - solo 5 FPS para mejor rendimiento
       if (this.isAndroid) {
-        if (currentTime - this.lastProcessTime < 100) { // 10 FPS máximo en Android
-          this.animationFrameId = requestAnimationFrame(() => this.detectHands(videoElement));
+        if (currentTime - this.lastProcessTime < 200) { // 5 FPS máximo en Android
+          setTimeout(() => this.detectHands(videoElement), 50);
           return;
         }
         this.lastProcessTime = currentTime;
@@ -161,9 +161,9 @@ export class HandDetector {
       }
     }
     
-    // Usar setTimeout en lugar de requestAnimationFrame para mejor control en Android
+    // Control de framerate optimizado para móvil
     if (this.isAndroid) {
-      setTimeout(() => this.detectHands(videoElement), 100); // 10 FPS
+      setTimeout(() => this.detectHands(videoElement), 200); // 5 FPS en Android para mejor rendimiento
     } else {
       this.animationFrameId = requestAnimationFrame(() => this.detectHands(videoElement));
     }

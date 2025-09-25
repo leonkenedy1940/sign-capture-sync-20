@@ -83,7 +83,16 @@ export class CameraManager {
   }
 
   public async createCameraStream(deviceId?: string, constraints?: MediaStreamConstraints): Promise<MediaStream> {
-    const videoConstraints: MediaTrackConstraints = {
+    // Configuración optimizada para móvil - resolución muy baja para mejor rendimiento
+    const isMobile = Capacitor.isNativePlatform() || /Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    
+    const videoConstraints: MediaTrackConstraints = isMobile ? {
+      width: { ideal: 240, max: 320 },      // Resolución muy baja para móvil
+      height: { ideal: 180, max: 240 },     // Mantener aspect ratio 4:3
+      frameRate: { ideal: 15, max: 20 },    // Framerate muy bajo para móvil
+      aspectRatio: 4/3,
+      ...constraints?.video as MediaTrackConstraints
+    } : {
       width: { ideal: 320, max: 640 },
       height: { ideal: 240, max: 480 },
       frameRate: { ideal: 30, max: 30 },

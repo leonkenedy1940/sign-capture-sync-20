@@ -9,6 +9,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Video, Square, Save, Camera, RefreshCw } from 'lucide-react';
 import { HandLandmarkerResult } from '@mediapipe/tasks-vision';
 import { CameraManager, CameraDevice } from '@/lib/cameraUtils';
+import { Capacitor } from '@capacitor/core';
 
 interface SignRecorderProps {
   onSignSaved?: () => void;
@@ -34,6 +35,12 @@ export const SignRecorder: React.FC<SignRecorderProps> = ({ onSignSaved }) => {
   const [availableCameras, setAvailableCameras] = useState<CameraDevice[]>([]);
   const [currentCameraId, setCurrentCameraId] = useState<string | undefined>();
   
+  // Variables para optimización móvil
+  const isMobile = Capacitor.isNativePlatform() || /Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+  const isAndroid = Capacitor.getPlatform() === 'android';
+  const frameSkipCounter = useRef(0);
+  const lastRenderTime = useRef(0);
+  
   const { toast } = useToast();
 
   const stopCamera = useCallback(() => {
@@ -54,11 +61,29 @@ export const SignRecorder: React.FC<SignRecorderProps> = ({ onSignSaved }) => {
   }, []);
 
   const onHandResults = useCallback((results: HandLandmarkerResult, faceResults?: any) => {
-    console.log('🔍 onHandResults llamado:', {
+    const currentTime = performance.now();
+    
+    // Frame skipping más agresivo en móvil para mejor rendimiento
+    if (isMobile) {
+      frameSkipCounter.current++;
+      if (frameSkipCounter.current % (isAndroid ? 4 : 2) !== 0) {
+        return; // Saltar frames en móvil
+      }
+      
+      // Throttling adicional por tiempo en Android
+      if (isAndroid && currentTime - lastRenderTime.current < 150) {
+        return; // Máximo 6-7 FPS de renderizado en Android
+      }
+      lastRenderTime.current = currentTime;
+    }
+
+    console.log('🔍 onHandResults llamado (optimizado móvil):', {
       landmarks: results.landmarks?.length || 0,
       faceDetected: faceResults?.faceLandmarks?.length || 0,
       isRecording,
-      timestamp: performance.now()
+      isMobile,
+      isAndroid,
+      frameSkipped: frameSkipCounter.current
     });
     
     if (canvasRef.current && videoRef.current) {
@@ -70,9 +95,15 @@ export const SignRecorder: React.FC<SignRecorderProps> = ({ onSignSaved }) => {
       });
       
       if (ctx) {
-        // Use immediate drawing instead of requestAnimationFrame for lower latency
+        // Rendering optimizado para móvil
         if (videoRef.current && videoRef.current.readyState >= 2) {
           ctx.clearRect(0, 0, canvas.width, canvas.height);
+          
+          // En móvil, renderizar video con menor calidad para mejor rendimiento
+          if (isMobile) {
+            ctx.imageSmoothingEnabled = false; // Desactivar antialiasing en móvil
+          }
+          
           ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
         }
 
@@ -83,44 +114,67 @@ export const SignRecorder: React.FC<SignRecorderProps> = ({ onSignSaved }) => {
           console.log('👋 Manos detectadas:', results.landmarks.length);
           
           for (const landmarks of results.landmarks) {
-            // Dibujar landmarks clave con mayor tamaño y colores diferentes
-            const keyLandmarks = [0, 4, 8, 12, 16, 20]; // Muñeca y puntas de dedos
-            
-            // Landmarks normales en azul claro
-            ctx.fillStyle = '#22d3ee';
-            ctx.beginPath();
-            for (let i = 0; i < landmarks.length; i++) {
-              if (!keyLandmarks.includes(i)) {
-                const landmark = landmarks[i];
-                ctx.moveTo(landmark.x * canvas.width + 1.5, landmark.y * canvas.height);
-                ctx.arc(
-                  landmark.x * canvas.width,
-                  landmark.y * canvas.height,
-                  1.5,
-                  0,
-                  2 * Math.PI
-                );
+            // Renderizado simplificado para móvil
+            if (isMobile) {
+              // Solo dibujar landmarks clave en móvil para mejor rendimiento
+              const keyLandmarks = [0, 4, 8, 12, 16, 20]; // Solo muñeca y puntas
+              
+              ctx.fillStyle = '#22d3ee';
+              ctx.beginPath();
+              for (const keyIndex of keyLandmarks) {
+                if (landmarks[keyIndex]) {
+                  const landmark = landmarks[keyIndex];
+                  ctx.moveTo(landmark.x * canvas.width + 2, landmark.y * canvas.height);
+                  ctx.arc(
+                    landmark.x * canvas.width,
+                    landmark.y * canvas.height,
+                    2, // Puntos más pequeños en móvil
+                    0,
+                    2 * Math.PI
+                  );
+                }
               }
-            }
-            ctx.fill();
-            
-            // Landmarks clave en amarillo/naranja más grandes
-            ctx.fillStyle = '#fbbf24';
-            ctx.beginPath();
-            for (const keyIndex of keyLandmarks) {
-              if (landmarks[keyIndex]) {
-                const landmark = landmarks[keyIndex];
-                ctx.moveTo(landmark.x * canvas.width + 3, landmark.y * canvas.height);
-                ctx.arc(
-                  landmark.x * canvas.width,
-                  landmark.y * canvas.height,
-                  3,
-                  0,
-                  2 * Math.PI
-                );
+              ctx.fill();
+            } else {
+              // Renderizado completo para desktop
+              const keyLandmarks = [0, 4, 8, 12, 16, 20];
+              
+              // Landmarks normales en azul claro
+              ctx.fillStyle = '#22d3ee';
+              ctx.beginPath();
+              for (let i = 0; i < landmarks.length; i++) {
+                if (!keyLandmarks.includes(i)) {
+                  const landmark = landmarks[i];
+                  ctx.moveTo(landmark.x * canvas.width + 1.5, landmark.y * canvas.height);
+                  ctx.arc(
+                    landmark.x * canvas.width,
+                    landmark.y * canvas.height,
+                    1.5,
+                    0,
+                    2 * Math.PI
+                  );
+                }
               }
+              ctx.fill();
+              
+              // Landmarks clave en amarillo/naranja más grandes
+              ctx.fillStyle = '#fbbf24';
+              ctx.beginPath();
+              for (const keyIndex of keyLandmarks) {
+                if (landmarks[keyIndex]) {
+                  const landmark = landmarks[keyIndex];
+                  ctx.moveTo(landmark.x * canvas.width + 3, landmark.y * canvas.height);
+                  ctx.arc(
+                    landmark.x * canvas.width,
+                    landmark.y * canvas.height,
+                    3,
+                    0,
+                    2 * Math.PI
+                  );
+                }
+              }
+              ctx.fill();
             }
-            ctx.fill();
             
             // Conexiones estructurales en verde
             ctx.strokeStyle = '#10b981';
@@ -193,48 +247,50 @@ export const SignRecorder: React.FC<SignRecorderProps> = ({ onSignSaved }) => {
           setHandsDetected(0);
         }
 
-        // DIBUJAR PLANO CARTESIANO DE REFERENCIA
-        ctx.strokeStyle = '#374151';
-        ctx.lineWidth = 0.5;
-        ctx.setLineDash([2, 2]);
-        
-        // Líneas verticales cada 40px
-        for (let x = 0; x <= canvas.width; x += 40) {
+        // DIBUJAR PLANO CARTESIANO DE REFERENCIA - Solo en desktop para mejor rendimiento
+        if (!isMobile) {
+          ctx.strokeStyle = '#374151';
+          ctx.lineWidth = 0.5;
+          ctx.setLineDash([2, 2]);
+          
+          // Líneas verticales cada 40px
+          for (let x = 0; x <= canvas.width; x += 40) {
+            ctx.beginPath();
+            ctx.moveTo(x, 0);
+            ctx.lineTo(x, canvas.height);
+            ctx.stroke();
+          }
+          
+          // Líneas horizontales cada 40px
+          for (let y = 0; y <= canvas.height; y += 40) {
+            ctx.beginPath();
+            ctx.moveTo(0, y);
+            ctx.lineTo(canvas.width, y);
+            ctx.stroke();
+          }
+          
+          // Líneas centrales más marcadas
+          ctx.strokeStyle = '#6b7280';
+          ctx.lineWidth = 1;
+          ctx.setLineDash([5, 3]);
+          
+          // Línea vertical central
           ctx.beginPath();
-          ctx.moveTo(x, 0);
-          ctx.lineTo(x, canvas.height);
+          ctx.moveTo(canvas.width / 2, 0);
+          ctx.lineTo(canvas.width / 2, canvas.height);
           ctx.stroke();
-        }
         
-        // Líneas horizontales cada 40px
-        for (let y = 0; y <= canvas.height; y += 40) {
+          // Línea horizontal central
           ctx.beginPath();
-          ctx.moveTo(0, y);
-          ctx.lineTo(canvas.width, y);
+          ctx.moveTo(0, canvas.height / 2);
+          ctx.lineTo(canvas.width, canvas.height / 2);
           ctx.stroke();
+          
+          ctx.setLineDash([]);
         }
-        
-        // Líneas centrales más marcadas
-        ctx.strokeStyle = '#6b7280';
-        ctx.lineWidth = 1;
-        ctx.setLineDash([5, 3]);
-        
-        // Línea vertical central
-        ctx.beginPath();
-        ctx.moveTo(canvas.width / 2, 0);
-        ctx.lineTo(canvas.width / 2, canvas.height);
-        ctx.stroke();
-        
-        // Línea horizontal central
-        ctx.beginPath();
-        ctx.moveTo(0, canvas.height / 2);
-        ctx.lineTo(canvas.width, canvas.height / 2);
-        ctx.stroke();
-        
-        ctx.setLineDash([]);
 
-        // DIBUJAR LANDMARKS FACIALES CON SISTEMA DE REFERENCIA MEJORADO
-        if (faceResults?.faceLandmarks && faceResults.faceLandmarks.length > 0) {
+        // DIBUJAR LANDMARKS FACIALES - Solo en desktop
+        if (faceResults?.faceLandmarks && faceResults.faceLandmarks.length > 0 && !isMobile) {
           const faceLandmarks = faceResults.faceLandmarks[0];
           console.log('😊 Cara detectada con', faceLandmarks.length, 'landmarks para normalización');
           
@@ -421,7 +477,7 @@ export const SignRecorder: React.FC<SignRecorderProps> = ({ onSignSaved }) => {
         }
       }
     }
-   }, []);
+  }, [isRecording, isMobile, isAndroid, frameSkipCounter, lastRenderTime]);
 
   const initializeCamera = useCallback(async (deviceId?: string) => {
     // Stop any existing camera first
