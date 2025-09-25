@@ -21,7 +21,7 @@ export const SignRecorder: React.FC<SignRecorderProps> = ({ onSignSaved }) => {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const handDetectorRef = useRef<HandDetector | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
-  const onResultsRef = useRef<(handResults: HandLandmarkerResult, faceResults?: any) => void>(() => {});
+  const onResultsRef = useRef<(handResults: HandLandmarkerResult, faceResults?: any, poseResults?: any) => void>(() => {});
   const isRecordingRef = useRef(false);
   
   const [isRecording, setIsRecording] = useState(false);
@@ -31,6 +31,7 @@ export const SignRecorder: React.FC<SignRecorderProps> = ({ onSignSaved }) => {
   const [isInitialized, setIsInitialized] = useState(false);
   const [isCameraOn, setIsCameraOn] = useState(false);
   const [handsDetected, setHandsDetected] = useState(0);
+  const [poseDetected, setPoseDetected] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
   const [availableCameras, setAvailableCameras] = useState<CameraDevice[]>([]);
   const [currentCameraId, setCurrentCameraId] = useState<string | undefined>();
@@ -60,7 +61,7 @@ export const SignRecorder: React.FC<SignRecorderProps> = ({ onSignSaved }) => {
     setIsCameraOn(false);
   }, []);
 
-  const onHandResults = useCallback((results: HandLandmarkerResult, faceResults?: any) => {
+  const onHandResults = useCallback((results: HandLandmarkerResult, faceResults?: any, poseResults?: any) => {
     const currentTime = performance.now();
     
     // Frame skipping más agresivo en móvil para mejor rendimiento
@@ -109,6 +110,10 @@ export const SignRecorder: React.FC<SignRecorderProps> = ({ onSignSaved }) => {
 
         const handsCount = results.landmarks ? results.landmarks.length : 0;
         setHandsDetected(handsCount);
+        
+        // Actualizar estado de pose detectada
+        const hasPose = poseResults?.landmarks && poseResults.landmarks.length > 0;
+        setPoseDetected(hasPose);
       
         if (results.landmarks) {
           console.log('👋 Manos detectadas:', results.landmarks.length);
@@ -176,15 +181,16 @@ export const SignRecorder: React.FC<SignRecorderProps> = ({ onSignSaved }) => {
               ctx.fill();
             }
             
-            // Conexiones estructurales en verde
+            // Conexiones estructurales de las manos en verde
             ctx.strokeStyle = '#10b981';
-            ctx.lineWidth = 1.5;
+            ctx.lineWidth = 2;
             const structuralConnections = [
-              [0, 1], [1, 2], [2, 3], [3, 4],
-              [0, 5], [5, 6], [6, 7], [7, 8],
-              [0, 9], [9, 10], [10, 11], [11, 12],
-              [0, 13], [13, 14], [14, 15], [15, 16],
-              [0, 17], [17, 18], [18, 19], [19, 20],
+              [0, 1], [1, 2], [2, 3], [3, 4],     // Pulgar
+              [0, 5], [5, 6], [6, 7], [7, 8],     // Índice
+              [5, 9], [9, 10], [10, 11], [11, 12], // Medio
+              [9, 13], [13, 14], [14, 15], [15, 16], // Anular
+              [13, 17], [17, 18], [18, 19], [19, 20], // Meñique
+              [0, 17] // Base de la palma
             ];
             
             ctx.beginPath();
@@ -202,49 +208,139 @@ export const SignRecorder: React.FC<SignRecorderProps> = ({ onSignSaved }) => {
             }
             ctx.stroke();
             
-            // Líneas de distancia entre landmarks clave en rojo para visualizar medidas exactas
-            ctx.strokeStyle = '#ef4444';
-            ctx.lineWidth = 1;
-            ctx.setLineDash([5, 5]);
-            
-            const keyConnections = [
-              [0, 4], [0, 8], [0, 12], [0, 16], [0, 20], // Muñeca a puntas
-              [4, 8], [8, 12], [12, 16], [16, 20] // Entre puntas adyacentes
-            ];
-            
-            ctx.beginPath();
-            for (const [start, end] of keyConnections) {
-              if (landmarks[start] && landmarks[end]) {
-                ctx.moveTo(
-                  landmarks[start].x * canvas.width,
-                  landmarks[start].y * canvas.height
-                );
-                ctx.lineTo(
-                  landmarks[end].x * canvas.width,
-                  landmarks[end].y * canvas.height
-                );
-                
-                // Mostrar distancia numérica
-                const midX = (landmarks[start].x + landmarks[end].x) * canvas.width / 2;
-                const midY = (landmarks[start].y + landmarks[end].y) * canvas.height / 2;
-                const distance = Math.sqrt(
-                  Math.pow(landmarks[start].x - landmarks[end].x, 2) + 
-                  Math.pow(landmarks[start].y - landmarks[end].y, 2)
-                ).toFixed(3);
-                
-                ctx.fillStyle = '#ffffff';
-                ctx.fillRect(midX - 15, midY - 8, 30, 16);
-                ctx.fillStyle = '#000000';
-                ctx.font = '8px Arial';
-                ctx.textAlign = 'center';
-                ctx.fillText(distance, midX, midY + 2);
+            // Plano cartesiano centrado en la muñeca (punto 0)
+            if (landmarks[0]) {
+              const wristX = landmarks[0].x * canvas.width;
+              const wristY = landmarks[0].y * canvas.height;
+              
+              // Ejes del plano cartesiano
+              ctx.strokeStyle = 'rgba(0, 255, 0, 0.7)';
+              ctx.lineWidth = 2;
+              
+              // Eje X
+              ctx.beginPath();
+              ctx.moveTo(0, wristY);
+              ctx.lineTo(canvas.width, wristY);
+              
+              // Eje Y
+              ctx.moveTo(wristX, 0);
+              ctx.lineTo(wristX, canvas.height);
+              ctx.stroke();
+              
+              // Cuadrícula
+              ctx.strokeStyle = 'rgba(0, 255, 0, 0.2)';
+              const gridSize = 50;
+              
+              // Líneas verticales
+              for (let x = wristX % gridSize; x < canvas.width; x += gridSize) {
+                ctx.beginPath();
+                ctx.moveTo(x, 0);
+                ctx.lineTo(x, canvas.height);
+                ctx.stroke();
               }
+              
+              // Líneas horizontales
+              for (let y = wristY % gridSize; y < canvas.height; y += gridSize) {
+                ctx.beginPath();
+                ctx.moveTo(0, y);
+                ctx.lineTo(canvas.width, y);
+                ctx.stroke();
+              }
+              
+              // Origen (muñeca)
+              ctx.fillStyle = '#FF00FF';
+              ctx.beginPath();
+              ctx.arc(wristX, wristY, 5, 0, 2 * Math.PI);
+              ctx.fill();
             }
-            ctx.stroke();
-            ctx.setLineDash([]);
           }
         } else {
           setHandsDetected(0);
+        }
+
+        // Dibujar puntos de pose/torso
+        if (poseResults?.landmarks && poseResults.landmarks.length > 0) {
+          const poseLandmarks = poseResults.landmarks[0];
+          
+          ctx.strokeStyle = '#FF6B35';
+          ctx.fillStyle = '#FF6B35';
+          ctx.lineWidth = 3;
+          
+          // Puntos clave del torso (hombros, codos, muñecas, caderas, rodillas, tobillos)
+          const keyPosePoints = [
+            11, 12, // Hombros
+            13, 14, // Codos
+            15, 16, // Muñecas
+            23, 24, // Caderas
+            25, 26, // Rodillas
+            27, 28  // Tobillos
+          ];
+          
+          // Dibujar puntos del torso
+          keyPosePoints.forEach((pointIndex) => {
+            if (poseLandmarks[pointIndex] && poseLandmarks[pointIndex].visibility > 0.5) {
+              const point = poseLandmarks[pointIndex];
+              const x = point.x * canvas.width;
+              const y = point.y * canvas.height;
+              
+              ctx.beginPath();
+              ctx.arc(x, y, 4, 0, 2 * Math.PI);
+              ctx.fill();
+            }
+          });
+          
+          // Conexiones del torso
+          const torsoConnections = [
+            [11, 12], // Hombros
+            [11, 13], [12, 14], // Hombro a codo
+            [13, 15], [14, 16], // Codo a muñeca
+            [11, 23], [12, 24], // Hombro a cadera
+            [23, 24], // Caderas
+            [23, 25], [24, 26], // Cadera a rodilla
+            [25, 27], [26, 28]  // Rodilla a tobillo
+          ];
+          
+          ctx.beginPath();
+          torsoConnections.forEach(([start, end]) => {
+            if (poseLandmarks[start] && poseLandmarks[end] && 
+                poseLandmarks[start].visibility > 0.5 && poseLandmarks[end].visibility > 0.5) {
+              const startX = poseLandmarks[start].x * canvas.width;
+              const startY = poseLandmarks[start].y * canvas.height;
+              const endX = poseLandmarks[end].x * canvas.width;
+              const endY = poseLandmarks[end].y * canvas.height;
+              
+              ctx.moveTo(startX, startY);
+              ctx.lineTo(endX, endY);
+            }
+          });
+          ctx.stroke();
+          
+          // Plano cartesiano centrado en el centro del torso (punto medio entre hombros)
+          if (poseLandmarks[11] && poseLandmarks[12] && 
+              poseLandmarks[11].visibility > 0.5 && poseLandmarks[12].visibility > 0.5) {
+            const centerX = (poseLandmarks[11].x + poseLandmarks[12].x) / 2 * canvas.width;
+            const centerY = (poseLandmarks[11].y + poseLandmarks[12].y) / 2 * canvas.height;
+            
+            // Ejes del plano cartesiano para el torso
+            ctx.strokeStyle = 'rgba(255, 107, 53, 0.7)';
+            ctx.lineWidth = 2;
+            
+            // Eje X
+            ctx.beginPath();
+            ctx.moveTo(0, centerY);
+            ctx.lineTo(canvas.width, centerY);
+            
+            // Eje Y
+            ctx.moveTo(centerX, 0);
+            ctx.lineTo(centerX, canvas.height);
+            ctx.stroke();
+            
+            // Origen (centro del torso)
+            ctx.fillStyle = '#FF6B35';
+            ctx.beginPath();
+            ctx.arc(centerX, centerY, 6, 0, 2 * Math.PI);
+            ctx.fill();
+          }
         }
 
         // DIBUJAR PLANO CARTESIANO DE REFERENCIA - Solo en desktop para mejor rendimiento
@@ -437,11 +533,12 @@ export const SignRecorder: React.FC<SignRecorderProps> = ({ onSignSaved }) => {
             console.log('✋ Landmarks encontrados, extrayendo datos...');
             
             try {
-              const extractedData = HandDetector.extractHandData(results, faceResults);
+              const extractedData = HandDetector.extractHandData(results, faceResults, poseResults);
               const frameData: FrameData = {
                 timestamp: performance.now(),
                 hands: extractedData.hands,
-                face: extractedData.face
+                face: extractedData.face,
+                pose: extractedData.pose
               };
               
               console.log('📊 Datos extraídos del frame:', {
@@ -534,7 +631,7 @@ export const SignRecorder: React.FC<SignRecorderProps> = ({ onSignSaved }) => {
         
         console.log('🤖 Inicializando detector de manos...');
         handDetectorRef.current = new HandDetector();
-        await handDetectorRef.current.initialize(videoRef.current, (handRes: HandLandmarkerResult, faceRes?: any) => onResultsRef.current(handRes, faceRes));
+        await handDetectorRef.current.initialize(videoRef.current, (handRes: HandLandmarkerResult, faceRes?: any, poseRes?: any) => onResultsRef.current(handRes, faceRes, poseRes));
         console.log('✅ Detector de manos inicializado');
         
         setIsInitialized(true);
@@ -791,7 +888,7 @@ export const SignRecorder: React.FC<SignRecorderProps> = ({ onSignSaved }) => {
           Grabación de Señas
         </h2>
         <p className="text-muted-foreground">
-          Graba señas dinámicas con detección de movimiento en tiempo real
+          Graba señas con detección de manos y torso en tiempo real - Sistema optimizado para Android
         </p>
       </div>
 
@@ -828,6 +925,13 @@ export const SignRecorder: React.FC<SignRecorderProps> = ({ onSignSaved }) => {
           {handsDetected > 0 && (
             <Badge variant="outline" className="bg-accent text-accent-foreground">
               {handsDetected} mano{handsDetected > 1 ? 's' : ''} detectada{handsDetected > 1 ? 's' : ''}
+            </Badge>
+          )}
+
+          {poseDetected && (
+            <Badge variant="outline" className="bg-orange-500/20 text-orange-600 border-orange-500/50">
+              <div className="w-2 h-2 bg-orange-500 rounded-full mr-1" />
+              Torso detectado
             </Badge>
           )}
         </div>
