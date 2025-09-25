@@ -745,6 +745,20 @@ export const SignDetector: React.FC = () => {
           )}
         </div>
 
+        {/* Botón de cambio de cámara en esquina superior derecha */}
+        {isCameraOn && availableCameras.length > 1 && (
+          <div className="absolute top-4 right-4 z-10">
+            <Button
+              onClick={switchCamera}
+              variant="outline"
+              size="sm"
+              className="bg-background/80 backdrop-blur-sm hover:bg-background/90"
+            >
+              <RefreshCw className="w-4 h-4" />
+            </Button>
+          </div>
+        )}
+
         {isDetecting && (
           <div className="absolute top-4 right-4">
             <Badge className="bg-accent text-accent-foreground animate-pulse">
@@ -797,17 +811,6 @@ export const SignDetector: React.FC = () => {
           <Camera className="w-4 h-4 mr-2" />
           {isCameraOn ? "Apagar Cámara" : "Prender Cámara"}
         </Button>
-
-        {isCameraOn && availableCameras.length > 1 && (
-          <Button
-            onClick={switchCamera}
-            variant="outline"
-            className="w-full"
-          >
-            <RefreshCw className="w-4 h-4 mr-2" />
-            Cambiar Cámara ({availableCameras.find(c => c.deviceId === currentCameraId)?.label || 'Actual'})
-          </Button>
-        )}
 
         {isCameraOn && (
           <Button

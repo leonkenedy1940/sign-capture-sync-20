@@ -761,22 +761,11 @@ export const SignRecorder: React.FC<SignRecorderProps> = ({ onSignSaved }) => {
           <Button
             onClick={toggleCamera}
             variant={isCameraOn ? "destructive" : "default"}
-            className="flex-1"
+            className="w-full"
           >
             <Camera className="w-4 h-4 mr-2" />
             {isCameraOn ? "Apagar Cámara" : "Prender Cámara"}
           </Button>
-
-          {isCameraOn && availableCameras.length > 1 && (
-            <Button
-              onClick={switchCamera}
-              variant="outline"
-              disabled={isRecording}
-            >
-              <RefreshCw className="w-4 h-4 mr-2" />
-              Cambiar
-            </Button>
-          )}
         </div>
 
         {isCameraOn && (
