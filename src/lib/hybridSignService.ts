@@ -18,12 +18,14 @@ export interface SignRecord {
 export class HybridSignService {
   private isOnline: boolean = navigator.onLine;
   private hasSupabaseAuth: boolean = false;
+  private migrationCompleted: boolean = false;
 
   constructor() {
     // Listen for online/offline events
     window.addEventListener('online', () => {
       this.isOnline = true;
       console.log('📶 Conexión restaurada - modo online');
+      this.syncIfPossible();
     });
     
     window.addEventListener('offline', () => {
@@ -42,6 +44,9 @@ export class HybridSignService {
         await supabaseSignService.initialize();
         this.hasSupabaseAuth = true;
         console.log('✅ Supabase inicializado - datos en la nube disponibles');
+        
+        // Migrate IndexedDB data to Supabase if not done yet
+        await this.migrateLocalDataToSupabase();
       } catch (error) {
         console.log('📱 Modo offline - usando almacenamiento local');
         this.hasSupabaseAuth = false;
@@ -55,75 +60,57 @@ export class HybridSignService {
     keyframes: FrameData[]; 
     duration: number 
   }): Promise<string> {
-    // Always save locally first for offline functionality
-    const localId = await signDatabase.saveSign(sign);
-    console.log('💾 Seña guardada localmente:', localId);
-
-    // Try to save to Supabase if available
+    // Try to save to Supabase first if available
     if (this.isOnline && this.hasSupabaseAuth) {
       try {
         const cloudId = await supabaseSignService.saveSign(sign);
-        console.log('☁️ Seña sincronizada en la nube:', cloudId);
+        console.log('☁️ Seña guardada en la nube:', cloudId);
         return cloudId;
       } catch (error) {
-        console.log('⚠️ Error sincronizando con la nube, manteniendo copia local');
+        console.log('⚠️ Error guardando en la nube, guardando localmente');
       }
     }
 
+    // Fallback to local storage
+    const localId = await signDatabase.saveSign(sign);
+    console.log('💾 Seña guardada localmente:', localId);
     return localId;
   }
 
   async getAllSigns(): Promise<SignRecord[]> {
-    const allSigns: SignRecord[] = [];
+    // Prioritize cloud signs if available
+    if (this.isOnline && this.hasSupabaseAuth) {
+      try {
+        const cloudSigns = await supabaseSignService.getAllSigns();
+        console.log('☁️ Cargadas señas desde la nube');
+        return cloudSigns.map(sign => ({
+          ...sign,
+          isLocal: false,
+          createdAt: new Date(sign.created_at)
+        }));
+      } catch (error) {
+        console.log('⚠️ Error cargando desde la nube, usando datos locales');
+      }
+    }
 
-    // Always load local signs
+    // Fallback to local signs
     try {
       const localSigns = await signDatabase.getAllSigns();
-      allSigns.push(...localSigns.map(sign => ({
+      console.log('💾 Cargadas señas locales');
+      return localSigns.map(sign => ({
         ...sign,
         isLocal: true,
         createdAt: sign.createdAt,
         created_at: sign.createdAt.toISOString()
-      })));
+      }));
     } catch (error) {
       console.error('Error loading local signs:', error);
+      return [];
     }
-
-    // Load cloud signs if available
-    if (this.isOnline && this.hasSupabaseAuth) {
-      try {
-        const cloudSigns = await supabaseSignService.getAllSigns();
-        allSigns.push(...cloudSigns.map(sign => ({
-          ...sign,
-          isLocal: false,
-          createdAt: new Date(sign.created_at)
-        })));
-      } catch (error) {
-        console.log('📱 No se pudieron cargar las señas de la nube - mostrando solo locales');
-      }
-    }
-
-    // Remove duplicates and sort by date
-    const uniqueSigns = this.removeDuplicates(allSigns);
-    return uniqueSigns.sort((a, b) => {
-      const dateA = a.createdAt || new Date(a.created_at || 0);
-      const dateB = b.createdAt || new Date(b.created_at || 0);
-      return dateB.getTime() - dateA.getTime();
-    });
   }
 
   async getSign(id: string): Promise<SignRecord | null> {
-    // Try local first
-    const localSign = await signDatabase.getSign(id);
-    if (localSign) {
-      return {
-        ...localSign,
-        isLocal: true,
-        created_at: localSign.createdAt.toISOString()
-      };
-    }
-
-    // Try cloud if available
+    // Try cloud first if available
     if (this.isOnline && this.hasSupabaseAuth) {
       try {
         const cloudSign = await supabaseSignService.getSign(id);
@@ -139,30 +126,37 @@ export class HybridSignService {
       }
     }
 
+    // Fallback to local
+    const localSign = await signDatabase.getSign(id);
+    if (localSign) {
+      return {
+        ...localSign,
+        isLocal: true,
+        created_at: localSign.createdAt.toISOString()
+      };
+    }
+
     return null;
   }
 
   async deleteSign(id: string): Promise<void> {
-    // Try to delete from both local and cloud
-    const errors: string[] = [];
-
-    try {
-      await signDatabase.deleteSign(id);
-    } catch (error) {
-      errors.push('local');
-      console.error('Error deleting local sign:', error);
-    }
-
+    // Try to delete from cloud first
     if (this.isOnline && this.hasSupabaseAuth) {
       try {
         await supabaseSignService.deleteSign(id);
+        console.log('☁️ Seña eliminada de la nube');
+        return;
       } catch (error) {
-        errors.push('cloud');
         console.error('Error deleting cloud sign:', error);
       }
     }
 
-    if (errors.length === 2) {
+    // Fallback to local deletion
+    try {
+      await signDatabase.deleteSign(id);
+      console.log('💾 Seña eliminada localmente');
+    } catch (error) {
+      console.error('Error deleting local sign:', error);
       throw new Error('Error eliminando la seña');
     }
   }
@@ -184,16 +178,46 @@ export class HybridSignService {
     throw new Error('Video no disponible');
   }
 
-  private removeDuplicates(signs: SignRecord[]): SignRecord[] {
-    const seen = new Set();
-    return signs.filter(sign => {
-      const key = `${sign.name}-${sign.duration}`;
-      if (seen.has(key)) {
-        return false;
+  private async migrateLocalDataToSupabase(): Promise<void> {
+    if (this.migrationCompleted || !this.hasSupabaseAuth) return;
+
+    try {
+      const localSigns = await signDatabase.getAllSigns();
+      if (localSigns.length === 0) {
+        this.migrationCompleted = true;
+        return;
       }
-      seen.add(key);
-      return true;
-    });
+
+      console.log(`🔄 Migrando ${localSigns.length} señas locales a Supabase...`);
+      
+      for (const localSign of localSigns) {
+        try {
+          await supabaseSignService.saveSign({
+            name: localSign.name,
+            videoBlob: localSign.videoBlob,
+            keyframes: localSign.keyframes,
+            duration: localSign.duration
+          });
+          
+          // Delete from local storage after successful migration
+          await signDatabase.deleteSign(localSign.id);
+          console.log(`✅ Migrada seña: ${localSign.name}`);
+        } catch (error) {
+          console.error(`❌ Error migrando seña ${localSign.name}:`, error);
+        }
+      }
+      
+      this.migrationCompleted = true;
+      console.log('🎉 Migración completada');
+    } catch (error) {
+      console.error('Error durante la migración:', error);
+    }
+  }
+
+  private async syncIfPossible(): Promise<void> {
+    if (this.hasSupabaseAuth && !this.migrationCompleted) {
+      await this.migrateLocalDataToSupabase();
+    }
   }
 
   getConnectionStatus(): { isOnline: boolean; hasSupabaseAuth: boolean } {

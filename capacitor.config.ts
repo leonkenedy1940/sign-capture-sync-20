@@ -1,7 +1,7 @@
 import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
-  appId: 'app.lovable.358ac9a0142f49609a4a5c49770d258d',
+  appId: 'com.local.app',
   appName: 'sign-capture-sync-20',
   webDir: 'dist',
   server: {
