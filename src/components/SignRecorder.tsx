@@ -70,9 +70,9 @@ export const SignRecorder: React.FC<SignRecorderProps> = ({ onSignSaved }) => {
         return; // Saltar frames en móvil
       }
       
-      // Throttling adicional por tiempo en Android
-      if (isAndroid && currentTime - lastRenderTime.current < 150) {
-        return; // Máximo 6-7 FPS de renderizado en Android
+      // Throttling optimizado para Android - mejor fluidez
+      if (isAndroid && currentTime - lastRenderTime.current < 67) {
+        return; // Máximo 15 FPS de renderizado en Android para mejor fluidez
       }
       lastRenderTime.current = currentTime;
     }
@@ -484,20 +484,35 @@ export const SignRecorder: React.FC<SignRecorderProps> = ({ onSignSaved }) => {
     stopCamera();
     
     try {
-      console.log('🎥 Inicializando cámara...');
+      console.log('🎥 Inicializando cámara...', { deviceId, isMobile, isAndroid });
       const cameraManager = CameraManager.getInstance();
       const stream = await cameraManager.createCameraStream(deviceId);
       
       streamRef.current = stream;
       
       if (videoRef.current) {
+        // Optimizaciones Android - mejor rendimiento
+        videoRef.current.playsInline = true;
+        videoRef.current.muted = true;
+        videoRef.current.autoplay = true;
+        
+        // Aceleración por hardware en Android
+        if (isAndroid) {
+          videoRef.current.style.willChange = 'transform';
+          videoRef.current.style.backfaceVisibility = 'hidden';
+          videoRef.current.style.perspective = '1000px';
+        }
+        
         videoRef.current.srcObject = stream;
         
         // Wait for video to be ready
         await new Promise<void>((resolve) => {
           if (videoRef.current) {
             videoRef.current.onloadedmetadata = () => {
-              console.log('📹 Video metadata cargado');
+              console.log('📹 Video metadata cargado:', {
+                videoWidth: videoRef.current?.videoWidth,
+                videoHeight: videoRef.current?.videoHeight
+              });
               resolve();
             };
           }
@@ -506,6 +521,17 @@ export const SignRecorder: React.FC<SignRecorderProps> = ({ onSignSaved }) => {
         await videoRef.current.play();
         console.log('▶️ Video reproduciendo');
         
+        // Configurar canvas con resolución optimizada
+        if (canvasRef.current) {
+          // Aceleración por hardware para canvas en Android
+          if (isAndroid) {
+            canvasRef.current.style.willChange = 'transform';
+            canvasRef.current.style.backfaceVisibility = 'hidden';
+          }
+          
+          console.log('🎨 Canvas configurado con aceleración por hardware para Android');
+        }
+        
         console.log('🤖 Inicializando detector de manos...');
         handDetectorRef.current = new HandDetector();
         await handDetectorRef.current.initialize(videoRef.current, (handRes: HandLandmarkerResult, faceRes?: any) => onResultsRef.current(handRes, faceRes));
@@ -513,9 +539,11 @@ export const SignRecorder: React.FC<SignRecorderProps> = ({ onSignSaved }) => {
         
         setIsInitialized(true);
         setIsCameraOn(true);
+        setCurrentCameraId(deviceId);
+        
         toast({
           title: "Cámara iniciada",
-          description: "Sistema de detección de manos activo",
+          description: "Sistema optimizado para Android activo",
         });
       }
     } catch (error) {
@@ -527,7 +555,7 @@ export const SignRecorder: React.FC<SignRecorderProps> = ({ onSignSaved }) => {
         variant: "destructive",
       });
     }
-  }, [stopCamera, onHandResults]);
+  }, [stopCamera, onHandResults, isMobile, isAndroid]);
 
 
   const startRecording = useCallback(async () => {
@@ -774,12 +802,21 @@ export const SignRecorder: React.FC<SignRecorderProps> = ({ onSignSaved }) => {
           autoPlay
           muted
           playsInline
+          webkit-playsinline="true"
+          style={{
+            willChange: isAndroid ? 'transform' : 'auto',
+            backfaceVisibility: isAndroid ? 'hidden' : 'visible'
+          }}
         />
         <canvas
           ref={canvasRef}
           className="w-full rounded-lg border-2 border-tech-blue shadow-glow-tech"
-          width={320}
-          height={240}
+          width={640}
+          height={480}
+          style={{
+            willChange: isAndroid ? 'transform' : 'auto',
+            backfaceVisibility: isAndroid ? 'hidden' : 'visible'
+          }}
         />
         
         <div className="absolute top-4 left-4 space-y-2">

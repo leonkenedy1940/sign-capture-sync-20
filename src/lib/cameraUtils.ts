@@ -87,9 +87,9 @@ export class CameraManager {
     const isMobile = Capacitor.isNativePlatform() || /Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
     
     const videoConstraints: MediaTrackConstraints = isMobile ? {
-      width: { ideal: 320, max: 480 },      // Resolución mejorada para móvil
-      height: { ideal: 240, max: 360 },     // Mantener aspect ratio 4:3
-      frameRate: { ideal: 20, max: 25 },    // Framerate mejorado para móvil
+      width: { ideal: 640, max: 640 },      // Resolución optimizada 640x480 para Android
+      height: { ideal: 480, max: 480 },     // Mantener aspect ratio 4:3
+      frameRate: { ideal: 25, max: 30 },    // FPS optimizado 24-30 para Android
       aspectRatio: 4/3,
       ...constraints?.video as MediaTrackConstraints
     } : {
