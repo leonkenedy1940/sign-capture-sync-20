@@ -1,10 +1,12 @@
 import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
-  appId: 'com.local.app',
+  appId: 'app.lovable.358ac9a0142f49609a4a5c49770d258d',
   appName: 'sign-capture-sync-20',
   webDir: 'dist',
   server: {
+    url: 'https://358ac9a0-142f-4960-9a4a-5c49770d258d.lovableproject.com?forceHideBadge=true',
+    cleartext: true,
     androidScheme: 'https'
   },
   plugins: {
