@@ -1,22 +1,30 @@
 export class VoiceAlertService {
-  private synth: SpeechSynthesis;
+  private synth: SpeechSynthesis | null = null;
   private voices: SpeechSynthesisVoice[] = [];
 
   constructor() {
-    this.synth = window.speechSynthesis;
-    this.loadVoices();
+    if ('speechSynthesis' in window && window.speechSynthesis) {
+      this.synth = window.speechSynthesis;
+      this.loadVoices();
+    } else {
+      console.warn('Speech synthesis not available in this browser');
+    }
   }
 
   /**
    * Carga las voces disponibles
    */
   private loadVoices(): void {
+    if (!this.synth) return;
+    
     this.voices = this.synth.getVoices();
     
     // Si las voces no están cargadas aún, escuchar el evento
     if (this.voices.length === 0) {
       this.synth.addEventListener('voiceschanged', () => {
-        this.voices = this.synth.getVoices();
+        if (this.synth) {
+          this.voices = this.synth.getVoices();
+        }
       });
     }
   }
@@ -44,9 +52,14 @@ export class VoiceAlertService {
    * Reproduce una alerta de voz con el nombre de la seña reconocida
    */
   async playSignRecognitionAlert(signName: string): Promise<void> {
+    if (!this.synth || !this.isSupported()) {
+      console.warn('Speech synthesis not available');
+      return Promise.resolve();
+    }
+
     return new Promise((resolve, reject) => {
       // Cancelar cualquier síntesis en curso
-      this.synth.cancel();
+      this.synth!.cancel();
 
       const message = `Seña reconocida: ${signName}`;
       const utterance = new SpeechSynthesisUtterance(message);
@@ -67,7 +80,7 @@ export class VoiceAlertService {
       utterance.onerror = (event) => reject(new Error(`Error de síntesis de voz: ${event.error}`));
 
       // Reproducir
-      this.synth.speak(utterance);
+      this.synth!.speak(utterance);
     });
   }
 
@@ -75,8 +88,13 @@ export class VoiceAlertService {
    * Reproduce una alerta cuando no hay coincidencias
    */
   async playNoMatchAlert(): Promise<void> {
+    if (!this.synth || !this.isSupported()) {
+      console.warn('Speech synthesis not available');
+      return Promise.resolve();
+    }
+
     return new Promise((resolve, reject) => {
-      this.synth.cancel();
+      this.synth!.cancel();
 
       const message = "No se encontraron coincidencias";
       const utterance = new SpeechSynthesisUtterance(message);
@@ -93,7 +111,7 @@ export class VoiceAlertService {
       utterance.onend = () => resolve();
       utterance.onerror = (event) => reject(new Error(`Error de síntesis de voz: ${event.error}`));
 
-      this.synth.speak(utterance);
+      this.synth!.speak(utterance);
     });
   }
 
@@ -101,14 +119,16 @@ export class VoiceAlertService {
    * Detiene cualquier reproducción de voz en curso
    */
   stop(): void {
-    this.synth.cancel();
+    if (this.synth) {
+      this.synth.cancel();
+    }
   }
 
   /**
    * Verifica si el navegador soporta síntesis de voz
    */
   isSupported(): boolean {
-    return 'speechSynthesis' in window;
+    return 'speechSynthesis' in window && !!window.speechSynthesis && !!this.synth;
   }
 
   /**

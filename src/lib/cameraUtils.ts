@@ -18,9 +18,7 @@ export class CameraManager {
 
   public async getAvailableCameras(): Promise<CameraDevice[]> {
     try {
-      // Request permissions first
-      await navigator.mediaDevices.getUserMedia({ video: true });
-      
+      // Enumerar dispositivos sin pedir permisos primero
       const devices = await navigator.mediaDevices.enumerateDevices();
       this.devices = devices
         .filter(device => device.kind === 'videoinput')
