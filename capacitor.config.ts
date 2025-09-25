@@ -25,7 +25,18 @@ const config: CapacitorConfig = {
       splashImmersive: true,
       layoutName: "launch_screen",
       useDialog: true,
+    },
+    Camera: {
+      permissions: ["camera"]
+    },
+    Device: {
+      permissions: ["camera", "microphone"]
     }
+  },
+  android: {
+    allowMixedContent: true,
+    captureInput: true,
+    webContentsDebuggingEnabled: true
   }
 };
 

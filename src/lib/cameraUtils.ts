@@ -1,3 +1,6 @@
+import { Capacitor } from '@capacitor/core';
+import { permissionsService } from './permissions';
+
 export interface CameraDevice {
   deviceId: string;
   label: string;
@@ -18,7 +21,19 @@ export class CameraManager {
 
   public async getAvailableCameras(): Promise<CameraDevice[]> {
     try {
-      // Enumerar dispositivos sin pedir permisos primero
+      // Verificar y solicitar permisos en plataformas nativas
+      if (Capacitor.isNativePlatform()) {
+        const hasPermissions = await permissionsService.checkCameraPermissions();
+        if (!hasPermissions) {
+          const granted = await permissionsService.requestCameraPermissions();
+          if (!granted) {
+            console.warn('Permisos de cámara no otorgados');
+            return [];
+          }
+        }
+      }
+
+      // Enumerar dispositivos
       const devices = await navigator.mediaDevices.enumerateDevices();
       this.devices = devices
         .filter(device => device.kind === 'videoinput')
@@ -29,7 +44,25 @@ export class CameraManager {
           facing: this.detectFacing(device.label)
         }));
 
-      console.log('📷 Cámaras disponibles:', this.devices);
+      // En Android, agregar cámaras predeterminadas si no se detectan
+      if (Capacitor.getPlatform() === 'android' && this.devices.length === 0) {
+        this.devices = [
+          {
+            deviceId: 'front',
+            label: 'Cámara Frontal',
+            kind: 'videoinput',
+            facing: 'front'
+          },
+          {
+            deviceId: 'back',
+            label: 'Cámara Trasera',
+            kind: 'videoinput',
+            facing: 'back'
+          }
+        ];
+      }
+
+      console.log('📷 Cámaras disponibles:', this.devices, permissionsService.getPlatformInfo());
       return this.devices;
     } catch (error) {
       console.error('Error obteniendo cámaras:', error);
@@ -58,10 +91,25 @@ export class CameraManager {
       ...constraints?.video as MediaTrackConstraints
     };
 
-    if (deviceId) {
-      videoConstraints.deviceId = { exact: deviceId };
+    // En Android, manejar deviceIds especiales
+    if (Capacitor.getPlatform() === 'android') {
+      if (deviceId === 'front') {
+        videoConstraints.facingMode = 'user';
+        delete videoConstraints.deviceId;
+      } else if (deviceId === 'back') {
+        videoConstraints.facingMode = 'environment';
+        delete videoConstraints.deviceId;
+      } else if (deviceId) {
+        videoConstraints.deviceId = { exact: deviceId };
+      } else {
+        videoConstraints.facingMode = 'user';
+      }
     } else {
-      videoConstraints.facingMode = 'user';
+      if (deviceId) {
+        videoConstraints.deviceId = { exact: deviceId };
+      } else {
+        videoConstraints.facingMode = 'user';
+      }
     }
 
     try {
@@ -72,12 +120,29 @@ export class CameraManager {
 
       console.log('📹 Stream de cámara creado:', {
         deviceId: deviceId || 'default',
-        tracks: stream.getVideoTracks().length
+        tracks: stream.getVideoTracks().length,
+        platform: Capacitor.getPlatform()
       });
 
       return stream;
     } catch (error) {
       console.error('Error creando stream de cámara:', error);
+      
+      // Fallback para Android - intentar con constraints más básicos
+      if (Capacitor.getPlatform() === 'android') {
+        try {
+          console.log('Intentando fallback de cámara para Android...');
+          const fallbackStream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: 'user' },
+            audio: false
+          });
+          return fallbackStream;
+        } catch (fallbackError) {
+          console.error('Error en fallback de cámara:', fallbackError);
+          throw fallbackError;
+        }
+      }
+      
       throw error;
     }
   }

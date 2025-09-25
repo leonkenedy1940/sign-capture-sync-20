@@ -1,4 +1,5 @@
 import { FilesetResolver, HandLandmarker, HandLandmarkerResult, FaceLandmarker, FaceLandmarkerResult } from '@mediapipe/tasks-vision';
+import { Capacitor } from '@capacitor/core';
 
 export interface HandKeypoint {
   x: number;
@@ -33,46 +34,83 @@ export class HandDetector {
   private onResults: ((handResults: HandLandmarkerResult, faceResults?: FaceLandmarkerResult) => void) | null = null;
   private isProcessing: boolean = false;
   private animationFrameId: number | null = null;
+  private isAndroid = false;
+  private lastProcessTime = 0;
+  private frameSkipCount = 0;
 
   constructor() {
-    // HandLandmarker instance will be created during initialize()
+    this.isAndroid = Capacitor.getPlatform() === 'android';
+    console.log('HandDetector creado para plataforma:', Capacitor.getPlatform());
   }
 
   public async initialize(videoElement: HTMLVideoElement, onResultsCallback: (handResults: HandLandmarkerResult, faceResults?: FaceLandmarkerResult) => void): Promise<void> {
     this.onResults = onResultsCallback;
 
     try {
-      // Initialize MediaPipe Tasks Vision
-      const vision = await FilesetResolver.forVisionTasks(
+      console.log('Inicializando MediaPipe para Android:', this.isAndroid);
+      
+      // Initialize MediaPipe Tasks Vision con timeout para Android
+      const visionPromise = FilesetResolver.forVisionTasks(
         "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm"
       );
+
+      const vision = this.isAndroid 
+        ? await Promise.race([
+            visionPromise,
+            new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout cargando MediaPipe')), 15000))
+          ])
+        : await visionPromise;
       
-      this.handLandmarker = await HandLandmarker.createFromOptions(vision, {
+      // Configuraciones optimizadas para Android
+      const handConfig = {
         baseOptions: { 
           modelAssetPath: "/models/hand_landmarker.task"
         },
         numHands: 2,
-        runningMode: "VIDEO",
-        minHandDetectionConfidence: 0.1,
-        minHandPresenceConfidence: 0.1,
-        minTrackingConfidence: 0.1
-      });
+        runningMode: "VIDEO" as const,
+        minHandDetectionConfidence: this.isAndroid ? 0.3 : 0.1,
+        minHandPresenceConfidence: this.isAndroid ? 0.3 : 0.1,
+        minTrackingConfidence: this.isAndroid ? 0.3 : 0.1
+      };
 
-      // Initialize Face Landmarker with more sensitive settings
-      this.faceLandmarker = await FaceLandmarker.createFromOptions(vision, {
+      const faceConfig = {
         baseOptions: {
           modelAssetPath: "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task"
         },
-        runningMode: "VIDEO",
+        runningMode: "VIDEO" as const,
         numFaces: 1,
-        minFaceDetectionConfidence: 0.1,
-        minFacePresenceConfidence: 0.1,
-        minTrackingConfidence: 0.1
-      });
+        minFaceDetectionConfidence: this.isAndroid ? 0.3 : 0.1,
+        minFacePresenceConfidence: this.isAndroid ? 0.3 : 0.1,
+        minTrackingConfidence: this.isAndroid ? 0.3 : 0.1
+      };
+
+      // Crear landmarks con timeout
+      this.handLandmarker = await Promise.race([
+        HandLandmarker.createFromOptions(vision as any, handConfig),
+        new Promise<never>((_, reject) => 
+          setTimeout(() => reject(new Error('Timeout creando HandLandmarker')), 10000)
+        )
+      ]);
+
+      // En Android, crear FaceLandmarker es opcional para mejor rendimiento
+      if (!this.isAndroid) {
+        try {
+          this.faceLandmarker = await Promise.race([
+            FaceLandmarker.createFromOptions(vision as any, faceConfig),
+            new Promise<never>((_, reject) => 
+              setTimeout(() => reject(new Error('Timeout creando FaceLandmarker')), 10000)
+            )
+          ]);
+        } catch (error) {
+          console.warn('FaceLandmarker no disponible, continuando sin detección facial:', error);
+        }
+      } else {
+        console.log('Saltando FaceLandmarker en Android para mejor rendimiento');
+      }
       
-      console.log('HandDetector y FaceLandmarker inicializados correctamente');
+      console.log('✅ MediaPipe inicializado correctamente para Android:', this.isAndroid);
       
-      // Start detection loop
+      // Start detection loop con throttling para Android
       this.detectHands(videoElement);
       
     } catch (error) {
@@ -82,39 +120,83 @@ export class HandDetector {
   }
 
   private detectHands = (videoElement: HTMLVideoElement) => {
-    if (videoElement.readyState >= 2 && this.handLandmarker && this.faceLandmarker && !this.isProcessing) {
+    if (videoElement.readyState >= 2 && this.handLandmarker && !this.isProcessing) {
+      const currentTime = performance.now();
+      
+      // Throttling para Android - procesar cada 3 frames en lugar de cada frame
+      if (this.isAndroid) {
+        if (currentTime - this.lastProcessTime < 100) { // 10 FPS máximo en Android
+          this.animationFrameId = requestAnimationFrame(() => this.detectHands(videoElement));
+          return;
+        }
+        this.lastProcessTime = currentTime;
+      }
+
       this.isProcessing = true;
       try {
         const timestamp = performance.now();
         const handResults = this.handLandmarker.detectForVideo(videoElement, timestamp);
-        const faceResults = this.faceLandmarker.detectForVideo(videoElement, timestamp);
+        
+        // Face detection solo en web o si está disponible
+        let faceResults: FaceLandmarkerResult | undefined;
+        if (this.faceLandmarker && !this.isAndroid) {
+          try {
+            faceResults = this.faceLandmarker.detectForVideo(videoElement, timestamp);
+          } catch (error) {
+            console.warn('Error en detección facial (no crítico):', error);
+          }
+        }
         
         if (this.onResults) {
           this.onResults(handResults, faceResults);
         }
       } catch (error) {
-        console.error('Error detecting hands and face:', error);
+        console.error('Error detecting hands:', error);
+        // En Android, no fallar completamente, solo continuar
+        if (!this.isAndroid) {
+          throw error;
+        }
       } finally {
         this.isProcessing = false;
       }
     }
     
-    this.animationFrameId = requestAnimationFrame(() => this.detectHands(videoElement));
+    // Usar setTimeout en lugar de requestAnimationFrame para mejor control en Android
+    if (this.isAndroid) {
+      setTimeout(() => this.detectHands(videoElement), 100); // 10 FPS
+    } else {
+      this.animationFrameId = requestAnimationFrame(() => this.detectHands(videoElement));
+    }
   }
 
   public stop(): void {
+    console.log('Deteniendo HandDetector...');
+    
     if (this.animationFrameId) {
       cancelAnimationFrame(this.animationFrameId);
       this.animationFrameId = null;
     }
-    if (this.handLandmarker) {
-      this.handLandmarker.close();
-      this.handLandmarker = null;
+    
+    try {
+      if (this.handLandmarker) {
+        this.handLandmarker.close();
+        this.handLandmarker = null;
+      }
+    } catch (error) {
+      console.warn('Error cerrando handLandmarker:', error);
     }
-    if (this.faceLandmarker) {
-      this.faceLandmarker.close();
-      this.faceLandmarker = null;
+    
+    try {
+      if (this.faceLandmarker) {
+        this.faceLandmarker.close();
+        this.faceLandmarker = null;
+      }
+    } catch (error) {
+      console.warn('Error cerrando faceLandmarker:', error);
     }
+    
+    this.isProcessing = false;
+    console.log('✅ HandDetector detenido');
   }
 
   public static extractHandData(handResults: HandLandmarkerResult, faceResults?: FaceLandmarkerResult): { hands: HandLandmarks[], face?: FaceLandmarks } {
