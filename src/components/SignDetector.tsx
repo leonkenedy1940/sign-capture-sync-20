@@ -107,7 +107,7 @@ export const SignDetector: React.FC = () => {
     }
   }, [toast, stopCamera]);
 
-  const onHandResults = useCallback((results: HandLandmarkerResult) => {
+  const onHandResults = useCallback((results: HandLandmarkerResult, faceResults?: any) => {
     if (canvasRef.current && videoRef.current) {
       const canvas = canvasRef.current;
       const ctx = canvas.getContext('2d', { 
@@ -252,12 +252,75 @@ export const SignDetector: React.FC = () => {
         } else {
           setHandsDetected(0);
         }
+
+        // DIBUJAR LANDMARKS FACIALES
+        if (faceResults?.faceLandmarks && faceResults.faceLandmarks.length > 0) {
+          const faceLandmarks = faceResults.faceLandmarks[0];
+          
+          // Landmarks faciales en verde claro
+          ctx.fillStyle = '#22c55e';
+          ctx.beginPath();
+          for (const landmark of faceLandmarks) {
+            ctx.moveTo(landmark.x * canvas.width + 1, landmark.y * canvas.height);
+            ctx.arc(
+              landmark.x * canvas.width,
+              landmark.y * canvas.height,
+              1,
+              0,
+              2 * Math.PI
+            );
+          }
+          ctx.fill();
+
+          // Contorno facial principal
+          const faceOutline = [10, 338, 297, 332, 284, 251, 389, 356, 454, 323, 361, 288, 397, 365, 379, 378, 400, 377, 152, 148, 176, 149, 150, 136, 172, 58, 132, 93, 234, 127, 162, 21, 54, 103, 67, 109];
+          
+          ctx.strokeStyle = '#22c55e';
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          for (let i = 0; i < faceOutline.length - 1; i++) {
+            const currentIdx = faceOutline[i];
+            const nextIdx = faceOutline[i + 1];
+            if (faceLandmarks[currentIdx] && faceLandmarks[nextIdx]) {
+              if (i === 0) {
+                ctx.moveTo(
+                  faceLandmarks[currentIdx].x * canvas.width,
+                  faceLandmarks[currentIdx].y * canvas.height
+                );
+              }
+              ctx.lineTo(
+                faceLandmarks[nextIdx].x * canvas.width,
+                faceLandmarks[nextIdx].y * canvas.height
+              );
+            }
+          }
+          ctx.stroke();
+
+          // Marcadores clave de la cara (ojos, nariz, boca) más grandes
+          const keyFacePoints = [33, 263, 1, 61, 291, 39, 181]; // Ojos, nariz, boca
+          ctx.fillStyle = '#fbbf24';
+          ctx.beginPath();
+          for (const pointIdx of keyFacePoints) {
+            if (faceLandmarks[pointIdx]) {
+              const landmark = faceLandmarks[pointIdx];
+              ctx.moveTo(landmark.x * canvas.width + 2, landmark.y * canvas.height);
+              ctx.arc(
+                landmark.x * canvas.width,
+                landmark.y * canvas.height,
+                2,
+                0,
+                2 * Math.PI
+              );
+            }
+          }
+          ctx.fill();
+        }
         
         // CAPTURA ESTANDARIZADA DE KEYFRAMES - IDENTICA A SIGNRECORDER
         if (isDetecting) {
           // Solo capturar keyframes cuando hay manos detectadas
           if (results.landmarks && results.landmarks.length > 0) {
-            const extractedData = HandDetector.extractHandData(results);
+            const extractedData = HandDetector.extractHandData(results, faceResults);
             const frameData: FrameData = {
               timestamp: performance.now(),
               hands: extractedData.hands,
