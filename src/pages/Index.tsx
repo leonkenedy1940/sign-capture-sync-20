@@ -2,9 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { SignRecorder } from '@/components/SignRecorder';
 import { SignDetector } from '@/components/SignDetector';
 import { SignLibrary } from '@/components/SignLibrary';
-import { supabaseSignService } from '@/lib/supabaseSignService';
+import { hybridSignService } from '@/lib/hybridSignService';
 import { useToast } from '@/hooks/use-toast';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { ConnectionStatus } from '@/components/ConnectionStatus';
 import { Hand, Video, Library, Search, Smartphone } from 'lucide-react';
 
 const Index = () => {
@@ -12,13 +13,13 @@ const Index = () => {
   const { toast } = useToast();
 
   useEffect(() => {
-    // Initialize database
-    supabaseSignService.initialize().catch((error) => {
-      console.error('Failed to initialize database:', error);
+    // Initialize hybrid storage
+    hybridSignService.initialize().catch((error) => {
+      console.error('Failed to initialize storage:', error);
       toast({
-        title: "Error de autenticación",
-        description: "Por favor, inicia sesión para usar esta funcionalidad",
-        variant: "destructive",
+        title: "Almacenamiento inicializado",
+        description: "Usando modo offline - las señas se guardan localmente",
+        variant: "default",
       });
     });
   }, [toast]);
@@ -33,17 +34,25 @@ const Index = () => {
       <header className="border-b border-border/50 bg-card/50 backdrop-blur">
         <div className="container mx-auto px-3 sm:px-4 py-4 sm:py-6">
           <div className="text-center space-y-3 sm:space-y-4">
-            <div className="flex items-center justify-center gap-2 sm:gap-3">
-              <div className="p-2 sm:p-3 rounded-full bg-gradient-tech shadow-glow-tech">
-                <Hand className="w-6 h-6 sm:w-8 sm:h-8 text-primary-foreground" />
+            <div className="flex items-center justify-between w-full">
+              <div className="flex items-center justify-center gap-2 sm:gap-3">
+                <div className="p-2 sm:p-3 rounded-full bg-gradient-tech shadow-glow-tech">
+                  <Hand className="w-6 h-6 sm:w-8 sm:h-8 text-primary-foreground" />
+                </div>
+              <h1 className="text-2xl sm:text-3xl lg:text-4xl font-bold bg-gradient-tech bg-clip-text text-transparent">
+                Sistema de Señas
+              </h1>
               </div>
-            <h1 className="text-2xl sm:text-3xl lg:text-4xl font-bold bg-gradient-tech bg-clip-text text-transparent">
-              Sistema de Señas
-            </h1>
+              <div className="hidden sm:flex">
+                <ConnectionStatus />
+              </div>
             </div>
             <p className="text-base sm:text-lg lg:text-xl text-muted-foreground max-w-2xl mx-auto px-4">
               Sistema completo para grabar, detectar y analizar señas dinámicas con IA
             </p>
+            <div className="flex justify-center sm:hidden">
+              <ConnectionStatus />
+            </div>
           </div>
         </div>
       </header>
