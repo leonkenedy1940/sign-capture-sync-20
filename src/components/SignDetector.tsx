@@ -3,7 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { HandDetector, FrameData } from '@/lib/mediapipe';
-import { signDatabase } from '@/lib/indexeddb';
+import { supabaseSignService } from '@/lib/supabaseSignService';
 import { signComparisonService, ComparisonResult } from '@/lib/signComparison';
 import { voiceAlertService } from '@/lib/voiceAlert';
 import { enhancedLogger, LoggingContext } from '@/lib/enhancedLogging';
@@ -487,8 +487,8 @@ export const SignDetector: React.FC = () => {
         return;
       }
 
-      await signDatabase.initialize();
-      const savedSigns = await signDatabase.getAllSigns();
+      await supabaseSignService.initialize();
+      const savedSigns = await supabaseSignService.getAllSigns();
       
       console.log('Señas guardadas encontradas:', savedSigns.length);
       
