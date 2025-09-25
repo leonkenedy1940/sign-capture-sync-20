@@ -17,7 +17,7 @@ export const SignDetector: React.FC = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const handDetectorRef = useRef<HandDetector | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
-  const onResultsRef = useRef<(handResults: HandLandmarkerResult, faceResults?: any) => void>(() => {});
+  const onResultsRef = useRef<(handResults: HandLandmarkerResult, faceResults?: any, poseResults?: any) => void>(() => {});
   const animationFrameId = useRef<number>();
   
   const [isDetecting, setIsDetecting] = useState(false);
@@ -137,7 +137,7 @@ export const SignDetector: React.FC = () => {
         
         await handDetectorRef.current.initialize(
           videoRef.current, 
-          (handRes: HandLandmarkerResult, faceRes?: any) => onResultsRef.current(handRes, faceRes)
+          (handRes: HandLandmarkerResult, faceRes?: any, poseRes?: any) => onResultsRef.current?.(handRes, faceRes, poseRes)
         );
         
         console.log('✅ Detector listo');
@@ -201,7 +201,7 @@ export const SignDetector: React.FC = () => {
     loadCameras();
   }, []);
 
-  const onHandResults = useCallback((results: HandLandmarkerResult, faceResults?: any) => {
+  const onHandResults = useCallback((results: HandLandmarkerResult, faceResults?: any, poseResults?: any) => {
     if (!canvasRef.current || !videoRef.current) return;
     
     const canvas = canvasRef.current;
@@ -333,17 +333,103 @@ export const SignDetector: React.FC = () => {
         }
       }
     }
+
+    // Dibujar puntos de pose/torso
+    if (poseResults?.landmarks && poseResults.landmarks.length > 0) {
+      const poseLandmarks = poseResults.landmarks[0];
+      
+      ctx.strokeStyle = '#FF6B35';
+      ctx.fillStyle = '#FF6B35';
+      ctx.lineWidth = 3;
+      
+      // Puntos clave del torso (hombros, codos, muñecas, caderas, rodillas, tobillos)
+      const keyPosePoints = [
+        11, 12, // Hombros
+        13, 14, // Codos
+        15, 16, // Muñecas
+        23, 24, // Caderas
+        25, 26, // Rodillas
+        27, 28  // Tobillos
+      ];
+      
+      // Dibujar puntos del torso
+      keyPosePoints.forEach((pointIndex) => {
+        if (poseLandmarks[pointIndex] && poseLandmarks[pointIndex].visibility > 0.5) {
+          const point = poseLandmarks[pointIndex];
+          const x = canvas.width - point.x * canvas.width;
+          const y = point.y * canvas.height;
+          
+          ctx.beginPath();
+          ctx.arc(x, y, 4, 0, 2 * Math.PI);
+          ctx.fill();
+        }
+      });
+      
+      // Conexiones del torso
+      const torsoConnections = [
+        [11, 12], // Hombros
+        [11, 13], [12, 14], // Hombro a codo
+        [13, 15], [14, 16], // Codo a muñeca
+        [11, 23], [12, 24], // Hombro a cadera
+        [23, 24], // Caderas
+        [23, 25], [24, 26], // Cadera a rodilla
+        [25, 27], [26, 28]  // Rodilla a tobillo
+      ];
+      
+      ctx.beginPath();
+      torsoConnections.forEach(([start, end]) => {
+        if (poseLandmarks[start] && poseLandmarks[end] && 
+            poseLandmarks[start].visibility > 0.5 && poseLandmarks[end].visibility > 0.5) {
+          const startX = canvas.width - poseLandmarks[start].x * canvas.width;
+          const startY = poseLandmarks[start].y * canvas.height;
+          const endX = canvas.width - poseLandmarks[end].x * canvas.width;
+          const endY = poseLandmarks[end].y * canvas.height;
+          
+          ctx.moveTo(startX, startY);
+          ctx.lineTo(endX, endY);
+        }
+      });
+      ctx.stroke();
+      
+      // Plano cartesiano centrado en el centro del torso (punto medio entre hombros)
+      if (poseLandmarks[11] && poseLandmarks[12] && 
+          poseLandmarks[11].visibility > 0.5 && poseLandmarks[12].visibility > 0.5) {
+        const centerX = canvas.width - ((poseLandmarks[11].x + poseLandmarks[12].x) / 2) * canvas.width;
+        const centerY = ((poseLandmarks[11].y + poseLandmarks[12].y) / 2) * canvas.height;
+        
+        // Ejes del plano cartesiano para el torso
+        ctx.strokeStyle = 'rgba(255, 107, 53, 0.7)';
+        ctx.lineWidth = 2;
+        
+        // Eje X
+        ctx.beginPath();
+        ctx.moveTo(0, centerY);
+        ctx.lineTo(canvas.width, centerY);
+        
+        // Eje Y
+        ctx.moveTo(centerX, 0);
+        ctx.lineTo(centerX, canvas.height);
+        ctx.stroke();
+        
+        // Origen (centro del torso)
+        ctx.fillStyle = '#FF6B35';
+        ctx.beginPath();
+        ctx.arc(centerX, centerY, 6, 0, 2 * Math.PI);
+        ctx.fill();
+      }
+    }
     
     // Actualizar contador de manos detectadas
     setHandsDetected(results.landmarks?.length || 0);
     
     // CAPTURA ESTANDARIZADA DE KEYFRAMES cuando está detectando
     if (isDetecting && results.landmarks && results.landmarks.length > 0) {
-      const extractedData = HandDetector.extractHandData(results, faceResults);
+      const extractedData = HandDetector.extractHandData(results, faceResults, poseResults);
       const frameData: FrameData = {
         timestamp: performance.now(),
         hands: extractedData.hands,
-        face: extractedData.face
+        face: extractedData.face,
+        pose: extractedData.pose
       };
       
       // Validar que los datos están completos - MISMA VALIDACION
