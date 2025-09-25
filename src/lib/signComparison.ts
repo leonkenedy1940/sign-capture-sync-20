@@ -18,15 +18,58 @@ export class SignComparisonService {
   private normalizeSequence(frames: FrameData[]): FrameData[] {
     if (frames.length === 0) return [];
     
-    const normalized: FrameData[] = [];
-    const step = (frames.length - 1) / (this.TARGET_FRAMES - 1);
+    console.log('📊 Iniciando normalización de secuencia:', frames.length, 'frames');
+    
+    // Filtrar frames válidos con manos Y cara cuando sea posible
+    const validFrames = frames.filter(frame => {
+      const hasValidHands = frame.hands.length > 0 && frame.hands[0].landmarks.length === 21;
+      const hasFace = frame.face && frame.face.landmarks.length > 0;
+      
+      // Priorizar frames con cara, pero aceptar frames solo con manos si es necesario
+      return hasValidHands;
+    });
+    
+    console.log('✅ Frames válidos encontrados:', validFrames.length);
+    console.log('😊 Frames con cara:', validFrames.filter(f => f.face?.landmarks?.length > 0).length);
+    
+    if (validFrames.length < this.MIN_QUALITY_FRAMES) {
+      console.warn('⚠️ Insuficientes frames de calidad para normalización:', validFrames.length);
+      return validFrames;
+    }
+
+    // Normalizar frames usando referencia facial cuando esté disponible
+    const normalizedFrames = validFrames.map((frame, index) => {
+      const normalized = this.normalizeHandsWithFace(frame);
+      
+      if (index % 10 === 0) { // Log cada 10 frames para no saturar
+        console.log(`🔄 Frame ${index} normalizado:`, {
+          originalHands: frame.hands.length,
+          hasFace: !!frame.face?.landmarks?.length,
+          normalizedHands: normalized.hands.length
+        });
+      }
+      
+      return normalized;
+    });
+
+    if (normalizedFrames.length === this.TARGET_FRAMES) {
+      console.log('🎯 Secuencia ya tiene el tamaño objetivo:', this.TARGET_FRAMES);
+      return normalizedFrames;
+    }
+
+    // Remuestrear a cantidad objetivo de frames
+    const result: FrameData[] = [];
+    const step = (normalizedFrames.length - 1) / (this.TARGET_FRAMES - 1);
+
+    console.log('📐 Remuestreando de', normalizedFrames.length, 'a', this.TARGET_FRAMES, 'frames');
 
     for (let i = 0; i < this.TARGET_FRAMES; i++) {
       const index = Math.round(i * step);
-      normalized.push(frames[Math.min(index, frames.length - 1)]);
+      result.push(normalizedFrames[Math.min(index, normalizedFrames.length - 1)]);
     }
 
-    return normalized;
+    console.log('✅ Normalización completada:', result.length, 'frames finales');
+    return result;
   }
 
   /**
@@ -34,30 +77,66 @@ export class SignComparisonService {
    */
   private normalizeHandsWithFace(frameData: FrameData): FrameData {
     if (!frameData.face || frameData.face.landmarks.length === 0) {
-      return frameData; // Sin cara, devolver original
+      console.warn('⚠️ No hay datos faciales para normalizar');
+      return frameData; // Return original if no face data
     }
 
     const faceLandmarks = frameData.face.landmarks;
-    // Usar puntos clave de la cara como referencia (nariz: índice 1, frente: índice 10)
-    const nosePoint = faceLandmarks[1] || faceLandmarks[0];
-    const foreheadPoint = faceLandmarks[10] || faceLandmarks[0];
     
-    // Calcular escala basada en el tamaño de la cara
-    const faceHeight = Math.abs(foreheadPoint.y - nosePoint.y);
-    const faceScale = faceHeight > 0 ? 1 / faceHeight : 1;
+    // Use key facial points for normalization - más puntos para mejor estabilidad
+    const leftEye = faceLandmarks[33];     // Esquina del ojo izquierdo
+    const rightEye = faceLandmarks[263];   // Esquina del ojo derecho
+    const noseTip = faceLandmarks[1];      // Punta de la nariz
+    const noseBridge = faceLandmarks[6];   // Puente de la nariz
+    const chin = faceLandmarks[175];       // Barbilla
+    const forehead = faceLandmarks[10];    // Frente
+    
+    if (!leftEye || !rightEye || !noseTip || !chin) {
+      console.warn('⚠️ Landmarks faciales clave faltantes');
+      return frameData;
+    }
 
+    // Calcular centro facial más robusto usando múltiples puntos
+    const faceCenter = {
+      x: (leftEye.x + rightEye.x + noseTip.x) / 3,
+      y: (leftEye.y + rightEye.y + (noseBridge?.y || noseTip.y)) / 3,
+      z: (leftEye.z + rightEye.z + noseTip.z) / 3
+    };
+    
+    // Distancia entre ojos como escala horizontal
+    const eyeDistance = Math.sqrt(
+      Math.pow(rightEye.x - leftEye.x, 2) +
+      Math.pow(rightEye.y - leftEye.y, 2)
+    );
+    
+    // Altura facial desde frente hasta barbilla como escala vertical
+    const faceHeight = Math.abs(chin.y - (forehead?.y || leftEye.y));
+    
+    // Usar la mayor de las dos escalas para mantener proporciones
+    const normalizeScale = Math.max(eyeDistance, faceHeight);
+
+    console.log('📐 Normalizando con cara:', {
+      faceCenter,
+      eyeDistance: eyeDistance.toFixed(3),
+      faceHeight: faceHeight.toFixed(3),
+      normalizeScale: normalizeScale.toFixed(3)
+    });
+
+    // Normalizar manos relativo a la cara con mejor escala
     const normalizedHands = frameData.hands.map(hand => ({
       ...hand,
       landmarks: hand.landmarks.map(landmark => ({
-        x: (landmark.x - nosePoint.x) * faceScale,
-        y: (landmark.y - nosePoint.y) * faceScale,
-        z: (landmark.z - nosePoint.z) * faceScale
+        x: (landmark.x - faceCenter.x) / normalizeScale,
+        y: (landmark.y - faceCenter.y) / normalizeScale,
+        z: (landmark.z - faceCenter.z) / normalizeScale
       }))
     }));
 
     return {
       ...frameData,
-      hands: normalizedHands
+      hands: normalizedHands,
+      // Mantener datos faciales originales para referencia
+      face: frameData.face
     };
   }
 

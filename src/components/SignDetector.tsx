@@ -253,30 +253,127 @@ export const SignDetector: React.FC = () => {
           setHandsDetected(0);
         }
 
-        // DIBUJAR LANDMARKS FACIALES
+        // DIBUJAR PLANO CARTESIANO DE REFERENCIA
+        ctx.strokeStyle = '#374151';
+        ctx.lineWidth = 0.5;
+        ctx.setLineDash([2, 2]);
+        
+        // Líneas verticales cada 50px
+        for (let x = 0; x <= canvas.width; x += 50) {
+          ctx.beginPath();
+          ctx.moveTo(x, 0);
+          ctx.lineTo(x, canvas.height);
+          ctx.stroke();
+        }
+        
+        // Líneas horizontales cada 50px
+        for (let y = 0; y <= canvas.height; y += 50) {
+          ctx.beginPath();
+          ctx.moveTo(0, y);
+          ctx.lineTo(canvas.width, y);
+          ctx.stroke();
+        }
+        
+        // Líneas centrales más marcadas
+        ctx.strokeStyle = '#6b7280';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([5, 3]);
+        
+        // Línea vertical central
+        ctx.beginPath();
+        ctx.moveTo(canvas.width / 2, 0);
+        ctx.lineTo(canvas.width / 2, canvas.height);
+        ctx.stroke();
+        
+        // Línea horizontal central
+        ctx.beginPath();
+        ctx.moveTo(0, canvas.height / 2);
+        ctx.lineTo(canvas.width, canvas.height / 2);
+        ctx.stroke();
+        
+        ctx.setLineDash([]);
+
+        // DIBUJAR LANDMARKS FACIALES CON REFERENCIA MEJORADA
         if (faceResults?.faceLandmarks && faceResults.faceLandmarks.length > 0) {
           const faceLandmarks = faceResults.faceLandmarks[0];
           
-          // Landmarks faciales en verde claro
-          ctx.fillStyle = '#22c55e';
-          ctx.beginPath();
-          for (const landmark of faceLandmarks) {
-            ctx.moveTo(landmark.x * canvas.width + 1, landmark.y * canvas.height);
+          // Puntos clave de referencia para normalización
+          const leftEye = faceLandmarks[33];
+          const rightEye = faceLandmarks[263];
+          const noseTip = faceLandmarks[1];
+          const chin = faceLandmarks[175];
+          
+          if (leftEye && rightEye && noseTip && chin) {
+            // Dibujar marco de referencia facial
+            const faceCenter = {
+              x: (leftEye.x + rightEye.x + noseTip.x) / 3,
+              y: (leftEye.y + rightEye.y + noseTip.y) / 3
+            };
+            
+            const eyeDistance = Math.sqrt(
+              Math.pow((rightEye.x - leftEye.x) * canvas.width, 2) +
+              Math.pow((rightEye.y - leftEye.y) * canvas.height, 2)
+            );
+            
+            // Marco de referencia facial en color distintivo
+            ctx.strokeStyle = '#8b5cf6';
+            ctx.lineWidth = 2;
+            ctx.setLineDash([8, 4]);
+            ctx.beginPath();
             ctx.arc(
-              landmark.x * canvas.width,
-              landmark.y * canvas.height,
-              1,
+              faceCenter.x * canvas.width,
+              faceCenter.y * canvas.height,
+              eyeDistance * 1.5,
               0,
               2 * Math.PI
             );
+            ctx.stroke();
+            ctx.setLineDash([]);
+            
+            // Centro facial marcado
+            ctx.fillStyle = '#8b5cf6';
+            ctx.beginPath();
+            ctx.arc(
+              faceCenter.x * canvas.width,
+              faceCenter.y * canvas.height,
+              4,
+              0,
+              2 * Math.PI
+            );
+            ctx.fill();
+            
+            // Etiqueta del centro facial
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(faceCenter.x * canvas.width - 25, faceCenter.y * canvas.height - 20, 50, 15);
+            ctx.fillStyle = '#000000';
+            ctx.font = '10px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText('Centro', faceCenter.x * canvas.width, faceCenter.y * canvas.height - 8);
+          }
+          
+          // Landmarks faciales en verde claro (solo puntos clave)
+          const keyFacePoints = [33, 263, 1, 6, 175, 10]; // Ojos, nariz, barbilla, frente
+          ctx.fillStyle = '#22c55e';
+          ctx.beginPath();
+          for (const pointIdx of keyFacePoints) {
+            if (faceLandmarks[pointIdx]) {
+              const landmark = faceLandmarks[pointIdx];
+              ctx.moveTo(landmark.x * canvas.width + 3, landmark.y * canvas.height);
+              ctx.arc(
+                landmark.x * canvas.width,
+                landmark.y * canvas.height,
+                3,
+                0,
+                2 * Math.PI
+              );
+            }
           }
           ctx.fill();
 
-          // Contorno facial principal
-          const faceOutline = [10, 338, 297, 332, 284, 251, 389, 356, 454, 323, 361, 288, 397, 365, 379, 378, 400, 377, 152, 148, 176, 149, 150, 136, 172, 58, 132, 93, 234, 127, 162, 21, 54, 103, 67, 109];
-          
+          // Contorno facial simplificado
+          const faceOutline = [10, 151, 9, 10]; // Solo contorno básico
           ctx.strokeStyle = '#22c55e';
-          ctx.lineWidth = 1;
+          ctx.lineWidth = 2;
           ctx.beginPath();
           for (let i = 0; i < faceOutline.length - 1; i++) {
             const currentIdx = faceOutline[i];
@@ -295,25 +392,6 @@ export const SignDetector: React.FC = () => {
             }
           }
           ctx.stroke();
-
-          // Marcadores clave de la cara (ojos, nariz, boca) más grandes
-          const keyFacePoints = [33, 263, 1, 61, 291, 39, 181]; // Ojos, nariz, boca
-          ctx.fillStyle = '#fbbf24';
-          ctx.beginPath();
-          for (const pointIdx of keyFacePoints) {
-            if (faceLandmarks[pointIdx]) {
-              const landmark = faceLandmarks[pointIdx];
-              ctx.moveTo(landmark.x * canvas.width + 2, landmark.y * canvas.height);
-              ctx.arc(
-                landmark.x * canvas.width,
-                landmark.y * canvas.height,
-                2,
-                0,
-                2 * Math.PI
-              );
-            }
-          }
-          ctx.fill();
         }
         
         // CAPTURA ESTANDARIZADA DE KEYFRAMES - IDENTICA A SIGNRECORDER

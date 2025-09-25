@@ -190,68 +190,179 @@ export const SignRecorder: React.FC<SignRecorderProps> = ({ onSignSaved }) => {
           setHandsDetected(0);
         }
 
-        // DIBUJAR LANDMARKS FACIALES
+        // DIBUJAR PLANO CARTESIANO DE REFERENCIA
+        ctx.strokeStyle = '#374151';
+        ctx.lineWidth = 0.5;
+        ctx.setLineDash([2, 2]);
+        
+        // Líneas verticales cada 40px
+        for (let x = 0; x <= canvas.width; x += 40) {
+          ctx.beginPath();
+          ctx.moveTo(x, 0);
+          ctx.lineTo(x, canvas.height);
+          ctx.stroke();
+        }
+        
+        // Líneas horizontales cada 40px
+        for (let y = 0; y <= canvas.height; y += 40) {
+          ctx.beginPath();
+          ctx.moveTo(0, y);
+          ctx.lineTo(canvas.width, y);
+          ctx.stroke();
+        }
+        
+        // Líneas centrales más marcadas
+        ctx.strokeStyle = '#6b7280';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([5, 3]);
+        
+        // Línea vertical central
+        ctx.beginPath();
+        ctx.moveTo(canvas.width / 2, 0);
+        ctx.lineTo(canvas.width / 2, canvas.height);
+        ctx.stroke();
+        
+        // Línea horizontal central
+        ctx.beginPath();
+        ctx.moveTo(0, canvas.height / 2);
+        ctx.lineTo(canvas.width, canvas.height / 2);
+        ctx.stroke();
+        
+        ctx.setLineDash([]);
+
+        // DIBUJAR LANDMARKS FACIALES CON SISTEMA DE REFERENCIA MEJORADO
         if (faceResults?.faceLandmarks && faceResults.faceLandmarks.length > 0) {
           const faceLandmarks = faceResults.faceLandmarks[0];
-          console.log('😊 Cara detectada con', faceLandmarks.length, 'landmarks');
+          console.log('😊 Cara detectada con', faceLandmarks.length, 'landmarks para normalización');
           
-          // Landmarks faciales en verde claro
-          ctx.fillStyle = '#22c55e';
-          ctx.beginPath();
-          for (const landmark of faceLandmarks) {
-            ctx.moveTo(landmark.x * canvas.width + 1, landmark.y * canvas.height);
+          // Puntos clave de referencia para normalización MEJORADA
+          const leftEye = faceLandmarks[33];
+          const rightEye = faceLandmarks[263];
+          const noseTip = faceLandmarks[1];
+          const noseBridge = faceLandmarks[6];
+          const chin = faceLandmarks[175];
+          const forehead = faceLandmarks[10];
+          
+          if (leftEye && rightEye && noseTip && chin) {
+            // Calcular centro facial robusto usando múltiples puntos
+            const faceCenter = {
+              x: (leftEye.x + rightEye.x + noseTip.x) / 3,
+              y: (leftEye.y + rightEye.y + (noseBridge?.y || noseTip.y)) / 3
+            };
+            
+            const eyeDistance = Math.sqrt(
+              Math.pow((rightEye.x - leftEye.x) * canvas.width, 2) +
+              Math.pow((rightEye.y - leftEye.y) * canvas.height, 2)
+            );
+            
+            const faceHeight = Math.abs((chin.y - (forehead?.y || leftEye.y)) * canvas.height);
+            const normalizeScale = Math.max(eyeDistance, faceHeight);
+            
+            // Marco de referencia facial para normalización - MÁS VISIBLE
+            ctx.strokeStyle = '#ec4899';
+            ctx.lineWidth = 3;
+            ctx.setLineDash([10, 5]);
+            ctx.beginPath();
             ctx.arc(
-              landmark.x * canvas.width,
-              landmark.y * canvas.height,
-              1,
+              faceCenter.x * canvas.width,
+              faceCenter.y * canvas.height,
+              normalizeScale,
               0,
               2 * Math.PI
             );
+            ctx.stroke();
+            
+            // Ejes de referencia desde el centro facial
+            ctx.strokeStyle = '#f59e0b';
+            ctx.lineWidth = 2;
+            ctx.setLineDash([8, 4]);
+            
+            // Eje horizontal
+            ctx.beginPath();
+            ctx.moveTo((faceCenter.x * canvas.width) - normalizeScale, faceCenter.y * canvas.height);
+            ctx.lineTo((faceCenter.x * canvas.width) + normalizeScale, faceCenter.y * canvas.height);
+            ctx.stroke();
+            
+            // Eje vertical
+            ctx.beginPath();
+            ctx.moveTo(faceCenter.x * canvas.width, (faceCenter.y * canvas.height) - normalizeScale);
+            ctx.lineTo(faceCenter.x * canvas.width, (faceCenter.y * canvas.height) + normalizeScale);
+            ctx.stroke();
+            
+            ctx.setLineDash([]);
+            
+            // Centro facial marcado prominentemente
+            ctx.fillStyle = '#ec4899';
+            ctx.beginPath();
+            ctx.arc(
+              faceCenter.x * canvas.width,
+              faceCenter.y * canvas.height,
+              6,
+              0,
+              2 * Math.PI
+            );
+            ctx.fill();
+            
+            // Etiqueta del centro facial con información
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(faceCenter.x * canvas.width - 35, faceCenter.y * canvas.height - 30, 70, 20);
+            ctx.fillStyle = '#000000';
+            ctx.font = '9px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText('Centro Facial', faceCenter.x * canvas.width, faceCenter.y * canvas.height - 18);
+            ctx.fillText(`E:${normalizeScale.toFixed(0)}px`, faceCenter.x * canvas.width, faceCenter.y * canvas.height - 8);
+            
+            console.log('📏 Sistema de normalización activo:', {
+              centro: faceCenter,
+              escala: normalizeScale.toFixed(2)
+            });
           }
-          ctx.fill();
-
-          // Contorno facial principal
-          const faceOutline = [10, 338, 297, 332, 284, 251, 389, 356, 454, 323, 361, 288, 397, 365, 379, 378, 400, 377, 152, 148, 176, 149, 150, 136, 172, 58, 132, 93, 234, 127, 162, 21, 54, 103, 67, 109];
           
-          ctx.strokeStyle = '#22c55e';
-          ctx.lineWidth = 1;
-          ctx.beginPath();
-          for (let i = 0; i < faceOutline.length - 1; i++) {
-            const currentIdx = faceOutline[i];
-            const nextIdx = faceOutline[i + 1];
-            if (faceLandmarks[currentIdx] && faceLandmarks[nextIdx]) {
-              if (i === 0) {
-                ctx.moveTo(
-                  faceLandmarks[currentIdx].x * canvas.width,
-                  faceLandmarks[currentIdx].y * canvas.height
-                );
-              }
-              ctx.lineTo(
-                faceLandmarks[nextIdx].x * canvas.width,
-                faceLandmarks[nextIdx].y * canvas.height
-              );
-            }
-          }
-          ctx.stroke();
-
-          // Marcadores clave de la cara (ojos, nariz, boca) más grandes
-          const keyFacePoints = [33, 263, 1, 61, 291, 39, 181]; // Ojos, nariz, boca
-          ctx.fillStyle = '#fbbf24';
+          // Landmarks faciales clave más visibles
+          const keyFacePoints = [33, 263, 1, 6, 175, 10]; // Ojos, nariz, barbilla, frente
+          ctx.fillStyle = '#10b981';
           ctx.beginPath();
           for (const pointIdx of keyFacePoints) {
             if (faceLandmarks[pointIdx]) {
               const landmark = faceLandmarks[pointIdx];
-              ctx.moveTo(landmark.x * canvas.width + 2, landmark.y * canvas.height);
+              ctx.moveTo(landmark.x * canvas.width + 4, landmark.y * canvas.height);
               ctx.arc(
                 landmark.x * canvas.width,
                 landmark.y * canvas.height,
-                2,
+                4,
                 0,
                 2 * Math.PI
               );
             }
           }
           ctx.fill();
+
+          // Líneas de conexión entre puntos clave para mostrar estructura facial
+          const faceConnections = [[33, 263], [1, 6], [6, 10], [1, 175]]; // Ojos, nariz-puente, puente-frente, nariz-barbilla
+          ctx.strokeStyle = '#10b981';
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          for (const [start, end] of faceConnections) {
+            if (faceLandmarks[start] && faceLandmarks[end]) {
+              ctx.moveTo(
+                faceLandmarks[start].x * canvas.width,
+                faceLandmarks[start].y * canvas.height
+              );
+              ctx.lineTo(
+                faceLandmarks[end].x * canvas.width,
+                faceLandmarks[end].y * canvas.height
+              );
+            }
+          }
+          ctx.stroke();
+        } else {
+          // Mensaje cuando no hay cara detectada
+          ctx.fillStyle = '#ef4444';
+          ctx.fillRect(10, 10, 200, 25);
+          ctx.fillStyle = '#ffffff';
+          ctx.font = '12px Arial';
+          ctx.textAlign = 'left';
+          ctx.fillText('⚠️ Cara no detectada - sin normalización', 15, 27);
         }
         
         // CAPTURA ESTANDARIZADA DE KEYFRAMES - MEJORADA
