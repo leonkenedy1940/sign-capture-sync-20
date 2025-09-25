@@ -157,10 +157,10 @@ export class HandDetector {
     if (videoElement.readyState >= 2 && this.handLandmarker && !this.isProcessing) {
       const currentTime = performance.now();
       
-      // Throttling más agresivo para Android - solo 5 FPS para mejor rendimiento
+      // Throttling optimizado para APK - más estable que desarrollo
       if (this.isAndroid) {
-        if (currentTime - this.lastProcessTime < 66) { // ~15 FPS máximo en Android (fluido)
-          setTimeout(() => this.detectHands(videoElement), 16);
+        if (currentTime - this.lastProcessTime < 83) { // ~12 FPS en APK para estabilidad
+          setTimeout(() => this.detectHands(videoElement), 20);
           return;
         }
         this.lastProcessTime = currentTime;
@@ -205,9 +205,9 @@ export class HandDetector {
       }
     }
     
-    // Control de framerate optimizado para móvil
+    // Control de framerate optimizado para APK compilado
     if (this.isAndroid) {
-      setTimeout(() => this.detectHands(videoElement), 66); // ~15 FPS en Android para mayor fluidez
+      setTimeout(() => this.detectHands(videoElement), 83); // ~12 FPS en APK para estabilidad
     } else {
       this.animationFrameId = requestAnimationFrame(() => this.detectHands(videoElement));
     }

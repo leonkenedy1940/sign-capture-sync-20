@@ -65,7 +65,7 @@ export const SignDetector: React.FC = () => {
         video: {
           width: { ideal: 1280, max: 1920 },
           height: { ideal: 720, max: 1080 },
-          frameRate: { ideal: 30, max: 30 }, // Reducido a 30fps máximo para Android
+          frameRate: { ideal: 24, max: 30 }, // Optimizado para APK - 24fps es más estable
           facingMode: deviceId ? undefined : 'user',
           deviceId: deviceId ? { exact: deviceId } : undefined,
           // Configuraciones específicas para Android
@@ -123,14 +123,15 @@ export const SignDetector: React.FC = () => {
         console.log('🤖 Iniciando detector de manos optimizado...');
         handDetectorRef.current = new HandDetector();
         
+        // Configuración optimizada para APK (sin GPU delegate que causa lag)
         const detectorConfig = {
           maxNumHands: 2,
           modelComplexity: 1, // 1 para mejor rendimiento en Android
           minDetectionConfidence: 0.7,
           minTrackingConfidence: 0.5,
           selfieMode: true,
-          // Configuración adicional para mejor rendimiento
-          delegate: 'GPU', // Usar aceleración por GPU
+          // NO usar GPU delegate en APK - causa lag significativo
+          // delegate: 'CPU', // CPU es más estable en APK compilado
           numHands: 2,
           runningMode: 'VIDEO' // Modo video para mejor rendimiento
         };
@@ -208,10 +209,16 @@ export const SignDetector: React.FC = () => {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    // Configuración del canvas para mejor rendimiento y calidad HD
+    // Configuración del canvas optimizada para APK compilado
     const video = videoRef.current;
-    canvas.width = video.videoWidth || 1280;
-    canvas.height = video.videoHeight || 720;
+    const targetWidth = video.videoWidth || 1280;
+    const targetHeight = video.videoHeight || 720;
+    
+    // Solo redimensionar si es necesario (evita lag en APK)
+    if (canvas.width !== targetWidth || canvas.height !== targetHeight) {
+      canvas.width = targetWidth;
+      canvas.height = targetHeight;
+    }
     
     // Limpiar el canvas
     ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -222,8 +229,9 @@ export const SignDetector: React.FC = () => {
     ctx.drawImage(video, -canvas.width, 0, canvas.width, canvas.height);
     ctx.restore();
 
-    // Configuración del estilo de dibujo optimizada
+    // Optimización adicional para APK: usar paths más eficientes
     const isMobile = /Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    const isAPK = window.location.protocol === 'file:' || window.location.hostname === 'localhost';
 
     // Dibujar landmarks de las manos con mayor claridad
     if (results.landmarks) {
