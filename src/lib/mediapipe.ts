@@ -92,20 +92,17 @@ export class HandDetector {
         )
       ]);
 
-      // En Android, crear FaceLandmarker es opcional para mejor rendimiento
-      if (!this.isAndroid) {
-        try {
-          this.faceLandmarker = await Promise.race([
-            FaceLandmarker.createFromOptions(vision as any, faceConfig),
-            new Promise<never>((_, reject) => 
-              setTimeout(() => reject(new Error('Timeout creando FaceLandmarker')), 10000)
-            )
-          ]);
-        } catch (error) {
-          console.warn('FaceLandmarker no disponible, continuando sin detección facial:', error);
-        }
-      } else {
-        console.log('Saltando FaceLandmarker en Android para mejor rendimiento');
+      // Crear FaceLandmarker para todas las plataformas con configuración optimizada para Android
+      try {
+        this.faceLandmarker = await Promise.race([
+          FaceLandmarker.createFromOptions(vision as any, faceConfig),
+          new Promise<never>((_, reject) => 
+            setTimeout(() => reject(new Error('Timeout creando FaceLandmarker')), 10000)
+          )
+        ]);
+        console.log('✅ FaceLandmarker inicializado para', this.isAndroid ? 'Android' : 'Web');
+      } catch (error) {
+        console.warn('FaceLandmarker no disponible, continuando sin detección facial:', error);
       }
       
       console.log('✅ MediaPipe inicializado correctamente para Android:', this.isAndroid);
@@ -137,9 +134,9 @@ export class HandDetector {
         const timestamp = performance.now();
         const handResults = this.handLandmarker.detectForVideo(videoElement, timestamp);
         
-        // Face detection solo en web o si está disponible
+        // Face detection para todas las plataformas si está disponible
         let faceResults: FaceLandmarkerResult | undefined;
-        if (this.faceLandmarker && !this.isAndroid) {
+        if (this.faceLandmarker) {
           try {
             faceResults = this.faceLandmarker.detectForVideo(videoElement, timestamp);
           } catch (error) {

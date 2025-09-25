@@ -153,6 +153,9 @@ export const SignDetector: React.FC = () => {
       });
       
       if (ctx) {
+        // Detección de móvil para optimizaciones de renderizado
+        const isMobile = /Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+        
         // Use immediate drawing instead of requestAnimationFrame for lower latency
         if (videoRef.current && videoRef.current.readyState >= 2) {
           ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -289,30 +292,34 @@ export const SignDetector: React.FC = () => {
           setHandsDetected(0);
         }
 
-        // DIBUJAR PLANO CARTESIANO DE REFERENCIA
-        ctx.strokeStyle = '#374151';
-        ctx.lineWidth = 0.5;
-        ctx.setLineDash([2, 2]);
-        
-        // Líneas verticales cada 50px
-        for (let x = 0; x <= canvas.width; x += 50) {
-          ctx.beginPath();
-          ctx.moveTo(x, 0);
-          ctx.lineTo(x, canvas.height);
-          ctx.stroke();
+        // DIBUJAR PLANO CARTESIANO DE REFERENCIA - Optimizado para móvil
+        if (!isMobile) {
+          // Plano completo solo en escritorio
+          ctx.strokeStyle = '#374151';
+          ctx.lineWidth = 0.5;
+          ctx.setLineDash([2, 2]);
+          
+          // Líneas verticales cada 50px
+          for (let x = 0; x <= canvas.width; x += 50) {
+            ctx.beginPath();
+            ctx.moveTo(x, 0);
+            ctx.lineTo(x, canvas.height);
+            ctx.stroke();
+          }
+          
+          // Líneas horizontales cada 50px
+          for (let y = 0; y <= canvas.height; y += 50) {
+            ctx.beginPath();
+            ctx.moveTo(0, y);
+            ctx.lineTo(canvas.width, y);
+            ctx.stroke();
+          }
+          ctx.setLineDash([]);
         }
         
-        // Líneas horizontales cada 50px
-        for (let y = 0; y <= canvas.height; y += 50) {
-          ctx.beginPath();
-          ctx.moveTo(0, y);
-          ctx.lineTo(canvas.width, y);
-          ctx.stroke();
-        }
-        
-        // Líneas centrales más marcadas
+        // Líneas centrales para referencia - siempre visibles
         ctx.strokeStyle = '#6b7280';
-        ctx.lineWidth = 1;
+        ctx.lineWidth = isMobile ? 0.8 : 1;
         ctx.setLineDash([5, 3]);
         
         // Línea vertical central
@@ -329,7 +336,7 @@ export const SignDetector: React.FC = () => {
         
         ctx.setLineDash([]);
 
-        // DIBUJAR LANDMARKS FACIALES CON REFERENCIA MEJORADA
+        // DIBUJAR LANDMARKS FACIALES CON REFERENCIA MEJORADA - Optimizado para móvil
         if (faceResults?.faceLandmarks && faceResults.faceLandmarks.length > 0) {
           const faceLandmarks = faceResults.faceLandmarks[0];
           
@@ -340,7 +347,7 @@ export const SignDetector: React.FC = () => {
           const chin = faceLandmarks[175];
           
           if (leftEye && rightEye && noseTip && chin) {
-            // Dibujar marco de referencia facial
+            // Dibujar marco de referencia facial - simplificado en móvil
             const faceCenter = {
               x: (leftEye.x + rightEye.x + noseTip.x) / 3,
               y: (leftEye.y + rightEye.y + noseTip.y) / 3
@@ -353,8 +360,8 @@ export const SignDetector: React.FC = () => {
             
             // Marco de referencia facial en color distintivo
             ctx.strokeStyle = '#8b5cf6';
-            ctx.lineWidth = 2;
-            ctx.setLineDash([8, 4]);
+            ctx.lineWidth = isMobile ? 1.5 : 2;
+            if (!isMobile) ctx.setLineDash([8, 4]);
             ctx.beginPath();
             ctx.arc(
               faceCenter.x * canvas.width,
@@ -372,33 +379,36 @@ export const SignDetector: React.FC = () => {
             ctx.arc(
               faceCenter.x * canvas.width,
               faceCenter.y * canvas.height,
-              4,
+              isMobile ? 3 : 4,
               0,
               2 * Math.PI
             );
             ctx.fill();
             
-            // Etiqueta del centro facial
-            ctx.fillStyle = '#ffffff';
-            ctx.fillRect(faceCenter.x * canvas.width - 25, faceCenter.y * canvas.height - 20, 50, 15);
-            ctx.fillStyle = '#000000';
-            ctx.font = '10px Arial';
-            ctx.textAlign = 'center';
-            ctx.fillText('Centro', faceCenter.x * canvas.width, faceCenter.y * canvas.height - 8);
+            // Etiqueta del centro facial - solo en escritorio
+            if (!isMobile) {
+              ctx.fillStyle = '#ffffff';
+              ctx.fillRect(faceCenter.x * canvas.width - 25, faceCenter.y * canvas.height - 20, 50, 15);
+              ctx.fillStyle = '#000000';
+              ctx.font = '10px Arial';
+              ctx.textAlign = 'center';
+              ctx.fillText('Centro', faceCenter.x * canvas.width, faceCenter.y * canvas.height - 8);
+            }
           }
           
           // Landmarks faciales en verde claro (solo puntos clave)
-          const keyFacePoints = [33, 263, 1, 6, 175, 10]; // Ojos, nariz, barbilla, frente
+          const keyFacePoints = isMobile ? [33, 263, 1] : [33, 263, 1, 6, 175, 10]; // Menos puntos en móvil
           ctx.fillStyle = '#22c55e';
           ctx.beginPath();
           for (const pointIdx of keyFacePoints) {
             if (faceLandmarks[pointIdx]) {
               const landmark = faceLandmarks[pointIdx];
-              ctx.moveTo(landmark.x * canvas.width + 3, landmark.y * canvas.height);
+              const radius = isMobile ? 2 : 3;
+              ctx.moveTo(landmark.x * canvas.width + radius, landmark.y * canvas.height);
               ctx.arc(
                 landmark.x * canvas.width,
                 landmark.y * canvas.height,
-                3,
+                radius,
                 0,
                 2 * Math.PI
               );
@@ -406,28 +416,30 @@ export const SignDetector: React.FC = () => {
           }
           ctx.fill();
 
-          // Contorno facial simplificado
-          const faceOutline = [10, 151, 9, 10]; // Solo contorno básico
-          ctx.strokeStyle = '#22c55e';
-          ctx.lineWidth = 2;
-          ctx.beginPath();
-          for (let i = 0; i < faceOutline.length - 1; i++) {
-            const currentIdx = faceOutline[i];
-            const nextIdx = faceOutline[i + 1];
-            if (faceLandmarks[currentIdx] && faceLandmarks[nextIdx]) {
-              if (i === 0) {
-                ctx.moveTo(
-                  faceLandmarks[currentIdx].x * canvas.width,
-                  faceLandmarks[currentIdx].y * canvas.height
+          // Contorno facial simplificado - solo en escritorio para mejor rendimiento
+          if (!isMobile) {
+            const faceOutline = [10, 151, 9, 10]; // Solo contorno básico
+            ctx.strokeStyle = '#22c55e';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            for (let i = 0; i < faceOutline.length - 1; i++) {
+              const currentIdx = faceOutline[i];
+              const nextIdx = faceOutline[i + 1];
+              if (faceLandmarks[currentIdx] && faceLandmarks[nextIdx]) {
+                if (i === 0) {
+                  ctx.moveTo(
+                    faceLandmarks[currentIdx].x * canvas.width,
+                    faceLandmarks[currentIdx].y * canvas.height
+                  );
+                }
+                ctx.lineTo(
+                  faceLandmarks[nextIdx].x * canvas.width,
+                  faceLandmarks[nextIdx].y * canvas.height
                 );
               }
-              ctx.lineTo(
-                faceLandmarks[nextIdx].x * canvas.width,
-                faceLandmarks[nextIdx].y * canvas.height
-              );
             }
+            ctx.stroke();
           }
-          ctx.stroke();
         }
         
         // CAPTURA ESTANDARIZADA DE KEYFRAMES - IDENTICA A SIGNRECORDER
