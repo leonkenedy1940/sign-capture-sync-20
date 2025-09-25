@@ -53,55 +53,92 @@ export const SignDetector: React.FC = () => {
   }, []);
 
   const initializeCamera = useCallback(async (deviceId?: string) => {
-    // Stop any existing camera first
     stopCamera();
     
     try {
-      console.log('🎥 Inicializando cámara en detector...');
+      console.log('🎥 Inicializando cámara optimizada...');
+      
+      // Configuración optimizada para mejor calidad manteniendo compatibilidad móvil
       const cameraManager = CameraManager.getInstance();
-      const stream = await cameraManager.createCameraStream(deviceId);
+      const constraints: MediaStreamConstraints = {
+        video: {
+          width: { ideal: 1280, max: 1920 },
+          height: { ideal: 720, max: 1080 },
+          frameRate: { ideal: 30, max: 60 },
+          facingMode: deviceId ? undefined : 'user',
+          deviceId: deviceId ? { exact: deviceId } : undefined,
+        },
+        audio: false
+      };
+
+      // Usar createCameraStream para mantener compatibilidad móvil con fallback a constraints optimizados
+      let stream: MediaStream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia(constraints);
+      } catch (error) {
+        console.log('Fallback a configuración estándar...');
+        stream = await cameraManager.createCameraStream(deviceId);
+      }
       
       streamRef.current = stream;
       
       if (videoRef.current) {
+        // Optimización para móviles
+        videoRef.current.playsInline = true;
+        videoRef.current.muted = true;
+        videoRef.current.setAttribute('playsinline', 'true');
+        videoRef.current.setAttribute('webkit-playsinline', 'true');
+        videoRef.current.setAttribute('autoplay', 'true');
+        
         videoRef.current.srcObject = stream;
         
-        // Wait for video to be ready
         await new Promise<void>((resolve) => {
           if (videoRef.current) {
             videoRef.current.onloadedmetadata = () => {
-              console.log('📹 Video metadata cargado en detector');
+              console.log('📹 Cámara lista - Resolución:', videoRef.current?.videoWidth, 'x', videoRef.current?.videoHeight);
+              // Intentar orientación horizontal para mejor visualización
+              if (typeof screen !== 'undefined' && screen.orientation && 'lock' in screen.orientation) {
+                try {
+                  (screen.orientation as any).lock('landscape').catch(() => console.log('Orientación no disponible'));
+                } catch (e) {
+                  console.log('Orientación no soportada');
+                }
+              }
               resolve();
             };
           }
         });
-        
+
         await videoRef.current.play();
-        console.log('▶️ Video reproduciendo en detector');
         
-        console.log('🤖 Inicializando detector de manos en detector...');
+        // Inicializar detector con configuración optimizada
+        console.log('🤖 Iniciando detector de manos optimizado...');
         handDetectorRef.current = new HandDetector();
-        await handDetectorRef.current.initialize(videoRef.current, (handRes: HandLandmarkerResult, faceRes?: any) => onResultsRef.current(handRes, faceRes));
-        console.log('✅ Detector de manos inicializado en detector');
+        await handDetectorRef.current.initialize(
+          videoRef.current, 
+          (handRes: HandLandmarkerResult, faceRes?: any) => onResultsRef.current(handRes, faceRes)
+        );
         
+        console.log('✅ Detector listo');
         setIsInitialized(true);
         setIsCameraOn(true);
+        setCurrentCameraId(deviceId);
         
         toast({
-          title: "Detector iniciado",
-          description: "Sistema de detección activo",
+          title: "Detector optimizado",
+          description: "Sistema de detección HD activo",
         });
       }
     } catch (error) {
-      console.error('❌ Error accessing camera in detector:', error);
+      console.error('❌ Error en la cámara:', error);
       stopCamera();
       toast({
         title: "Error de cámara",
-        description: "Cámara en uso por otra aplicación. Cierra otras pestañas que usen la cámara.",
+        description: "No se pudo acceder a la cámara",
         variant: "destructive",
       });
     }
-  }, [toast, stopCamera]);
+  }, [stopCamera, toast]);
 
   const switchCamera = useCallback(async () => {
     const cameraManager = CameraManager.getInstance();
@@ -144,335 +181,158 @@ export const SignDetector: React.FC = () => {
   }, []);
 
   const onHandResults = useCallback((results: HandLandmarkerResult, faceResults?: any) => {
-    if (canvasRef.current && videoRef.current) {
-      const canvas = canvasRef.current;
-      const ctx = canvas.getContext('2d', { 
-        alpha: false, 
-        willReadFrequently: false,
-        desynchronized: true
-      });
-      
-      if (ctx) {
-        // Detección de móvil para optimizaciones de renderizado
-        const isMobile = /Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    if (!canvasRef.current || !videoRef.current) return;
+    
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    // Configuración del canvas para mejor rendimiento y calidad HD
+    const video = videoRef.current;
+    canvas.width = video.videoWidth || 1280;
+    canvas.height = video.videoHeight || 720;
+    
+    // Limpiar el canvas
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    
+    // Dibujar el video con efecto espejo para mejor usabilidad
+    ctx.save();
+    ctx.scale(-1, 1); // Efecto espejo
+    ctx.drawImage(video, -canvas.width, 0, canvas.width, canvas.height);
+    ctx.restore();
+
+    // Configuración del estilo de dibujo optimizada
+    const isMobile = /Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+
+    // Dibujar landmarks de las manos con mayor claridad
+    if (results.landmarks) {
+      for (const landmarks of results.landmarks) {
+        // Dibujar conexiones de la mano con líneas más claras
+        const connections = [
+          // Pulgar
+          [0, 1], [1, 2], [2, 3], [3, 4],
+          // Índice  
+          [0, 5], [5, 6], [6, 7], [7, 8],
+          // Medio
+          [5, 9], [9, 10], [10, 11], [11, 12],
+          // Anular
+          [9, 13], [13, 14], [14, 15], [15, 16],
+          // Meñique
+          [13, 17], [17, 18], [18, 19], [19, 20],
+          // Base de la palma
+          [0, 17]
+        ];
         
-        // Sincronizar tamaño del canvas con el tamaño real del video (evita blur y grilla invisible en móvil)
-        if (videoRef.current && videoRef.current.readyState >= 2) {
-          const v = videoRef.current;
-          const targetW = v.videoWidth || canvas.clientWidth || 320;
-          const targetH = v.videoHeight || canvas.clientHeight || 240;
-          if (canvas.width !== targetW || canvas.height !== targetH) {
-            canvas.width = targetW;
-            canvas.height = targetH;
+        // Líneas de conexión en verde brillante
+        ctx.strokeStyle = '#00FF00';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        connections.forEach(([start, end]) => {
+          if (landmarks[start] && landmarks[end]) {
+            // Ajustar coordenadas para efecto espejo
+            const startX = canvas.width - landmarks[start].x * canvas.width;
+            const startY = landmarks[start].y * canvas.height;
+            const endX = canvas.width - landmarks[end].x * canvas.width;
+            const endY = landmarks[end].y * canvas.height;
+            
+            ctx.moveTo(startX, startY);
+            ctx.lineTo(endX, endY);
           }
+        });
+        ctx.stroke();
+        
+        // Dibujar puntos landmarks más visibles
+        ctx.fillStyle = '#FF0000';
+        for (const point of landmarks) {
+          const x = canvas.width - point.x * canvas.width;
+          const y = point.y * canvas.height;
           
-          // Dibujar frame actual
-          ctx.clearRect(0, 0, canvas.width, canvas.height);
-          ctx.drawImage(v, 0, 0, canvas.width, canvas.height);
+          ctx.beginPath();
+          ctx.arc(x, y, 4, 0, 2 * Math.PI);
+          ctx.fill();
         }
-      
-        const handsCount = results.landmarks ? results.landmarks.length : 0;
-        setHandsDetected(handsCount);
-
-        // Enhanced logging context
-        const loggingContext: LoggingContext = {
-          handsDetected: handsCount,
-          requiredHands: 1, // Can be configured based on sign requirements
-          timestamp: performance.now(),
-          frameQuality: results.landmarks && results.landmarks.length > 0 ? 0.8 : 0.3
-        };
-
-        // Check for ambient light and hands detection issues
-        if (isDetecting) {
-          enhancedLogger.checkHandsDetection(loggingContext);
-          enhancedLogger.logFrameQuality(loggingContext);
-        }
-      
-        if (results.landmarks) {
+        
+        // Dibujar plano cartesiano mejorado centrado en la muñeca
+        if (landmarks[0]) {
+          const wristX = canvas.width - landmarks[0].x * canvas.width;
+          const wristY = landmarks[0].y * canvas.height;
           
-          for (const landmarks of results.landmarks) {
-            // Dibujar landmarks clave con mayor tamaño y colores diferentes
-            const keyLandmarks = [0, 4, 8, 12, 16, 20]; // Muñeca y puntas de dedos
-            
-            // Landmarks normales en azul claro
-            ctx.fillStyle = '#22d3ee';
-            ctx.beginPath();
-            for (let i = 0; i < landmarks.length; i++) {
-              if (!keyLandmarks.includes(i)) {
-                const landmark = landmarks[i];
-                ctx.moveTo(landmark.x * canvas.width + 1.5, landmark.y * canvas.height);
-                ctx.arc(
-                  landmark.x * canvas.width,
-                  landmark.y * canvas.height,
-                  1.5,
-                  0,
-                  2 * Math.PI
-                );
-              }
-            }
-            ctx.fill();
-            
-            // Landmarks clave en amarillo/naranja más grandes
-            ctx.fillStyle = '#fbbf24';
-            ctx.beginPath();
-            for (const keyIndex of keyLandmarks) {
-              if (landmarks[keyIndex]) {
-                const landmark = landmarks[keyIndex];
-                ctx.moveTo(landmark.x * canvas.width + 3, landmark.y * canvas.height);
-                ctx.arc(
-                  landmark.x * canvas.width,
-                  landmark.y * canvas.height,
-                  3,
-                  0,
-                  2 * Math.PI
-                );
-              }
-            }
-            ctx.fill();
-            
-            // Conexiones estructurales en verde
-            ctx.strokeStyle = '#10b981';
-            ctx.lineWidth = 1.5;
-            const structuralConnections = [
-              [0, 1], [1, 2], [2, 3], [3, 4],
-              [0, 5], [5, 6], [6, 7], [7, 8],
-              [0, 9], [9, 10], [10, 11], [11, 12],
-              [0, 13], [13, 14], [14, 15], [15, 16],
-              [0, 17], [17, 18], [18, 19], [19, 20],
-            ];
-            
-            ctx.beginPath();
-            for (const [start, end] of structuralConnections) {
-              if (landmarks[start] && landmarks[end]) {
-                ctx.moveTo(
-                  landmarks[start].x * canvas.width,
-                  landmarks[start].y * canvas.height
-                );
-                ctx.lineTo(
-                  landmarks[end].x * canvas.width,
-                  landmarks[end].y * canvas.height
-                );
-              }
-            }
-            ctx.stroke();
-            
-            // Líneas de distancia entre landmarks clave en rojo para visualizar medidas exactas
-            ctx.strokeStyle = '#ef4444';
-            ctx.lineWidth = 1;
-            ctx.setLineDash([5, 5]);
-            
-            const keyConnections = [
-              [0, 4], [0, 8], [0, 12], [0, 16], [0, 20], // Muñeca a puntas
-              [4, 8], [8, 12], [12, 16], [16, 20] // Entre puntas adyacentes
-            ];
-            
-            ctx.beginPath();
-            for (const [start, end] of keyConnections) {
-              if (landmarks[start] && landmarks[end]) {
-                ctx.moveTo(
-                  landmarks[start].x * canvas.width,
-                  landmarks[start].y * canvas.height
-                );
-                ctx.lineTo(
-                  landmarks[end].x * canvas.width,
-                  landmarks[end].y * canvas.height
-                );
-                
-                // Mostrar distancia numérica
-                const midX = (landmarks[start].x + landmarks[end].x) * canvas.width / 2;
-                const midY = (landmarks[start].y + landmarks[end].y) * canvas.height / 2;
-                const distance = Math.sqrt(
-                  Math.pow(landmarks[start].x - landmarks[end].x, 2) + 
-                  Math.pow(landmarks[start].y - landmarks[end].y, 2)
-                ).toFixed(3);
-                
-                ctx.fillStyle = '#ffffff';
-                ctx.fillRect(midX - 15, midY - 8, 30, 16);
-                ctx.fillStyle = '#000000';
-                ctx.font = '8px Arial';
-                ctx.textAlign = 'center';
-                ctx.fillText(distance, midX, midY + 2);
-              }
-            }
-            ctx.stroke();
-            ctx.setLineDash([]);
-          }
-        } else {
-          setHandsDetected(0);
-        }
-
-        // DIBUJAR PLANO CARTESIANO DE REFERENCIA - Optimizado para móvil
-        if (!isMobile) {
-          // Plano completo solo en escritorio
-          ctx.strokeStyle = '#374151';
-          ctx.lineWidth = 0.5;
-          ctx.setLineDash([2, 2]);
+          // Ejes principales del plano cartesiano
+          ctx.strokeStyle = 'rgba(0, 255, 0, 0.8)';
+          ctx.lineWidth = 2;
           
-          // Líneas verticales cada 50px
-          for (let x = 0; x <= canvas.width; x += 50) {
+          // Eje X horizontal
+          ctx.beginPath();
+          ctx.moveTo(0, wristY);
+          ctx.lineTo(canvas.width, wristY);
+          ctx.stroke();
+          
+          // Eje Y vertical
+          ctx.beginPath();
+          ctx.moveTo(wristX, 0);
+          ctx.lineTo(wristX, canvas.height);
+          ctx.stroke();
+          
+          // Cuadrícula de referencia más fina
+          ctx.strokeStyle = 'rgba(0, 255, 0, 0.3)';
+          ctx.lineWidth = 1;
+          const gridSize = isMobile ? 60 : 40;
+          
+          // Líneas verticales de la cuadrícula
+          for (let x = (wristX % gridSize); x < canvas.width; x += gridSize) {
             ctx.beginPath();
             ctx.moveTo(x, 0);
             ctx.lineTo(x, canvas.height);
             ctx.stroke();
           }
           
-          // Líneas horizontales cada 50px
-          for (let y = 0; y <= canvas.height; y += 50) {
+          // Líneas horizontales de la cuadrícula
+          for (let y = (wristY % gridSize); y < canvas.height; y += gridSize) {
             ctx.beginPath();
             ctx.moveTo(0, y);
             ctx.lineTo(canvas.width, y);
             ctx.stroke();
           }
-          ctx.setLineDash([]);
-        }
-        
-        // Líneas centrales para referencia - siempre visibles
-        ctx.strokeStyle = '#6b7280';
-        ctx.lineWidth = isMobile ? 0.8 : 1;
-        ctx.setLineDash([5, 3]);
-        
-        // Línea vertical central
-        ctx.beginPath();
-        ctx.moveTo(canvas.width / 2, 0);
-        ctx.lineTo(canvas.width / 2, canvas.height);
-        ctx.stroke();
-        
-        // Línea horizontal central
-        ctx.beginPath();
-        ctx.moveTo(0, canvas.height / 2);
-        ctx.lineTo(canvas.width, canvas.height / 2);
-        ctx.stroke();
-        
-        ctx.setLineDash([]);
-
-        // DIBUJAR LANDMARKS FACIALES CON REFERENCIA MEJORADA - Optimizado para móvil
-        if (faceResults?.faceLandmarks && faceResults.faceLandmarks.length > 0) {
-          const faceLandmarks = faceResults.faceLandmarks[0];
           
-          // Puntos clave de referencia para normalización
-          const leftEye = faceLandmarks[33];
-          const rightEye = faceLandmarks[263];
-          const noseTip = faceLandmarks[1];
-          const chin = faceLandmarks[175];
-          
-          if (leftEye && rightEye && noseTip && chin) {
-            // Dibujar marco de referencia facial - simplificado en móvil
-            const faceCenter = {
-              x: (leftEye.x + rightEye.x + noseTip.x) / 3,
-              y: (leftEye.y + rightEye.y + noseTip.y) / 3
-            };
-            
-            const eyeDistance = Math.sqrt(
-              Math.pow((rightEye.x - leftEye.x) * canvas.width, 2) +
-              Math.pow((rightEye.y - leftEye.y) * canvas.height, 2)
-            );
-            
-            // Marco de referencia facial en color distintivo
-            ctx.strokeStyle = '#8b5cf6';
-            ctx.lineWidth = isMobile ? 1.5 : 2;
-            if (!isMobile) ctx.setLineDash([8, 4]);
-            ctx.beginPath();
-            ctx.arc(
-              faceCenter.x * canvas.width,
-              faceCenter.y * canvas.height,
-              eyeDistance * 1.5,
-              0,
-              2 * Math.PI
-            );
-            ctx.stroke();
-            ctx.setLineDash([]);
-            
-            // Centro facial marcado
-            ctx.fillStyle = '#8b5cf6';
-            ctx.beginPath();
-            ctx.arc(
-              faceCenter.x * canvas.width,
-              faceCenter.y * canvas.height,
-              isMobile ? 3 : 4,
-              0,
-              2 * Math.PI
-            );
-            ctx.fill();
-            
-            // Etiqueta del centro facial - solo en escritorio
-            if (!isMobile) {
-              ctx.fillStyle = '#ffffff';
-              ctx.fillRect(faceCenter.x * canvas.width - 25, faceCenter.y * canvas.height - 20, 50, 15);
-              ctx.fillStyle = '#000000';
-              ctx.font = '10px Arial';
-              ctx.textAlign = 'center';
-              ctx.fillText('Centro', faceCenter.x * canvas.width, faceCenter.y * canvas.height - 8);
-            }
-          }
-          
-          // Landmarks faciales en verde claro (solo puntos clave)
-          const keyFacePoints = isMobile ? [33, 263, 1] : [33, 263, 1, 6, 175, 10]; // Menos puntos en móvil
-          ctx.fillStyle = '#22c55e';
+          // Marcar el origen (muñeca) con un punto distintivo
+          ctx.fillStyle = '#FF00FF';
           ctx.beginPath();
-          for (const pointIdx of keyFacePoints) {
-            if (faceLandmarks[pointIdx]) {
-              const landmark = faceLandmarks[pointIdx];
-              const radius = isMobile ? 2 : 3;
-              ctx.moveTo(landmark.x * canvas.width + radius, landmark.y * canvas.height);
-              ctx.arc(
-                landmark.x * canvas.width,
-                landmark.y * canvas.height,
-                radius,
-                0,
-                2 * Math.PI
-              );
-            }
-          }
+          ctx.arc(wristX, wristY, 8, 0, 2 * Math.PI);
           ctx.fill();
-
-          // Contorno facial simplificado - solo en escritorio para mejor rendimiento
+          
+          // Etiqueta del origen
           if (!isMobile) {
-            const faceOutline = [10, 151, 9, 10]; // Solo contorno básico
-            ctx.strokeStyle = '#22c55e';
-            ctx.lineWidth = 2;
-            ctx.beginPath();
-            for (let i = 0; i < faceOutline.length - 1; i++) {
-              const currentIdx = faceOutline[i];
-              const nextIdx = faceOutline[i + 1];
-              if (faceLandmarks[currentIdx] && faceLandmarks[nextIdx]) {
-                if (i === 0) {
-                  ctx.moveTo(
-                    faceLandmarks[currentIdx].x * canvas.width,
-                    faceLandmarks[currentIdx].y * canvas.height
-                  );
-                }
-                ctx.lineTo(
-                  faceLandmarks[nextIdx].x * canvas.width,
-                  faceLandmarks[nextIdx].y * canvas.height
-                );
-              }
-            }
-            ctx.stroke();
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+            ctx.fillRect(wristX - 25, wristY - 25, 50, 20);
+            ctx.fillStyle = '#000000';
+            ctx.font = '12px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText('ORIGEN', wristX, wristY - 10);
           }
         }
-        
-        // CAPTURA ESTANDARIZADA DE KEYFRAMES - IDENTICA A SIGNRECORDER
-        if (isDetecting) {
-          // Solo capturar keyframes cuando hay manos detectadas
-          if (results.landmarks && results.landmarks.length > 0) {
-            const extractedData = HandDetector.extractHandData(results, faceResults);
-            const frameData: FrameData = {
-              timestamp: performance.now(),
-              hands: extractedData.hands,
-              face: extractedData.face
-            };
-            
-            // Validar que los datos están completos - MISMA VALIDACION
-            if (frameData.hands.length > 0 && frameData.hands[0].landmarks.length === 21) {
-              setDetectionKeyframes(prev => [...prev, frameData]);
-              console.log('✓ Frame válido detectado:', {
-                timestamp: frameData.timestamp,
-                handsCount: frameData.hands.length,
-                landmarksPerHand: frameData.hands.map(h => h.landmarks.length)
-              });
-            }
-          }
-        }
+      }
+    }
+    
+    // Actualizar contador de manos detectadas
+    setHandsDetected(results.landmarks?.length || 0);
+    
+    // CAPTURA ESTANDARIZADA DE KEYFRAMES cuando está detectando
+    if (isDetecting && results.landmarks && results.landmarks.length > 0) {
+      const extractedData = HandDetector.extractHandData(results, faceResults);
+      const frameData: FrameData = {
+        timestamp: performance.now(),
+        hands: extractedData.hands,
+        face: extractedData.face
+      };
+      
+      // Validar que los datos están completos - MISMA VALIDACION
+      if (frameData.hands.length > 0 && frameData.hands[0].landmarks.length === 21) {
+        setDetectionKeyframes(prev => [...prev, frameData]);
+        console.log('✓ Frame válido detectado:', {
+          timestamp: frameData.timestamp,
+          handsCount: frameData.hands.length,
+          landmarksPerHand: frameData.hands.map(h => h.landmarks.length)
+        });
       }
     }
   }, [isDetecting]);
