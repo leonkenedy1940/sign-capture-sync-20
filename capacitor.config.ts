@@ -5,8 +5,6 @@ const config: CapacitorConfig = {
   appName: 'sign-capture-sync-20',
   webDir: 'dist',
   server: {
-    url: 'https://358ac9a0-142f-4960-9a4a-5c49770d258d.lovableproject.com?forceHideBadge=true',
-    cleartext: true,
     androidScheme: 'https'
   },
   plugins: {
