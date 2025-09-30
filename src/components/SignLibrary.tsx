@@ -2,9 +2,9 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { SignRecord, supabaseSignService } from '@/lib/supabaseSignService';
+import { SignRecord, signDatabase } from '@/lib/indexeddb';
 import { useToast } from '@/hooks/use-toast';
-import { Play, Trash2, Clock, Hand, Smartphone } from 'lucide-react';
+import { Play, Trash2, Clock, Hand } from 'lucide-react';
 
 interface SignLibraryProps {
   refreshTrigger?: number;
@@ -21,9 +21,9 @@ export const SignLibrary: React.FC<SignLibraryProps> = ({ refreshTrigger }) => {
 
   const loadSigns = async () => {
     try {
-      await supabaseSignService.initialize();
-      const allSigns = await supabaseSignService.getAllSigns();
-      setSigns(allSigns);
+      await signDatabase.initialize();
+      const allSigns = await signDatabase.getAllSigns();
+      setSigns(allSigns.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime()));
     } catch (error) {
       console.error('Error loading signs:', error);
       toast({
@@ -41,9 +41,7 @@ export const SignLibrary: React.FC<SignLibraryProps> = ({ refreshTrigger }) => {
       setPlayingSign(sign.id);
       
       if (videoRef.current && canvasRef.current) {
-        // Get video blob from cloud
-        const videoBlob = await supabaseSignService.getVideoBlob(sign.video_url!);
-        const videoURL = URL.createObjectURL(videoBlob);
+        const videoURL = URL.createObjectURL(sign.videoBlob);
         videoRef.current.src = videoURL;
         
         const canvas = canvasRef.current;
@@ -62,48 +60,32 @@ export const SignLibrary: React.FC<SignLibraryProps> = ({ refreshTrigger }) => {
             // Draw video frame
             ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
             
-            // Calcular el frame más cercano basado en el progreso del video
-            const progress = videoRef.current.currentTime / videoRef.current.duration;
-            const frameIndex = Math.floor(progress * (sign.keyframes.length - 1));
-            const currentFrame = sign.keyframes[frameIndex];
+            // Find closest keyframe based on video time
+            const currentTime = videoRef.current.currentTime * 1000; // Convert to ms
+            const startTime = sign.keyframes[0]?.timestamp || 0;
+            const relativeTime = currentTime + startTime;
+            
+            const closestFrame = sign.keyframes.find((frame, index) => {
+              const nextFrame = sign.keyframes[index + 1];
+              if (!nextFrame) return true;
+              return frame.timestamp <= relativeTime && nextFrame.timestamp > relativeTime;
+            });
             
             // Draw hand keypoints if available
-            if (currentFrame && currentFrame.hands.length > 0) {
-              for (const hand of currentFrame.hands) {
-                // Draw key landmarks first (bigger circles)
-                const keyLandmarks = [0, 4, 8, 12, 16, 20]; // Wrist and fingertips
-                
-                ctx.fillStyle = hand.handedness === 'Left' ? '#fbbf24' : '#f59e0b';
-                for (const keyIndex of keyLandmarks) {
-                  if (hand.landmarks[keyIndex]) {
-                    const landmark = hand.landmarks[keyIndex];
-                    ctx.beginPath();
-                    ctx.arc(
-                      landmark.x * canvas.width,
-                      landmark.y * canvas.height,
-                      6,
-                      0,
-                      2 * Math.PI
-                    );
-                    ctx.fill();
-                  }
-                }
-                
-                // Draw regular landmarks (smaller circles)
-                ctx.fillStyle = hand.handedness === 'Left' ? '#22d3ee' : '#06b6d4';
-                for (let i = 0; i < hand.landmarks.length; i++) {
-                  if (!keyLandmarks.includes(i)) {
-                    const landmark = hand.landmarks[i];
-                    ctx.beginPath();
-                    ctx.arc(
-                      landmark.x * canvas.width,
-                      landmark.y * canvas.height,
-                      3,
-                      0,
-                      2 * Math.PI
-                    );
-                    ctx.fill();
-                  }
+            if (closestFrame && closestFrame.hands.length > 0) {
+              for (const hand of closestFrame.hands) {
+                // Draw landmarks
+                for (const landmark of hand.landmarks) {
+                  ctx.beginPath();
+                  ctx.arc(
+                    landmark.x * canvas.width,
+                    landmark.y * canvas.height,
+                    4,
+                    0,
+                    2 * Math.PI
+                  );
+                  ctx.fillStyle = hand.handedness === 'Left' ? '#22d3ee' : '#06b6d4';
+                  ctx.fill();
                 }
                 
                 // Draw connections
@@ -116,7 +98,7 @@ export const SignLibrary: React.FC<SignLibraryProps> = ({ refreshTrigger }) => {
                   [5, 9], [9, 13], [13, 17] // Palm
                 ];
                 
-                ctx.strokeStyle = hand.handedness === 'Left' ? '#10b981' : '#059669';
+                ctx.strokeStyle = hand.handedness === 'Left' ? '#22d3ee' : '#06b6d4';
                 ctx.lineWidth = 2;
                 
                 for (const [start, end] of connections) {
@@ -134,14 +116,6 @@ export const SignLibrary: React.FC<SignLibraryProps> = ({ refreshTrigger }) => {
                   }
                 }
               }
-              
-              // Show frame info
-              ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-              ctx.fillRect(10, canvas.height - 50, 200, 35);
-              ctx.fillStyle = '#ffffff';
-              ctx.font = '14px Arial';
-              ctx.fillText(`Frame: ${frameIndex + 1}/${sign.keyframes.length}`, 15, canvas.height - 30);
-              ctx.fillText(`Manos: ${currentFrame.hands.length}`, 15, canvas.height - 15);
             }
           }
         };
@@ -166,7 +140,7 @@ export const SignLibrary: React.FC<SignLibraryProps> = ({ refreshTrigger }) => {
 
   const deleteSign = async (id: string, name: string) => {
     try {
-      await supabaseSignService.deleteSign(id);
+      await signDatabase.deleteSign(id);
       setSigns(signs.filter(sign => sign.id !== id));
       toast({
         title: "Seña eliminada",
@@ -195,62 +169,58 @@ export const SignLibrary: React.FC<SignLibraryProps> = ({ refreshTrigger }) => {
   }
 
   return (
-    <Card className="p-3 sm:p-6 space-y-4 sm:space-y-6">
+    <Card className="p-6 space-y-6">
       <div className="text-center space-y-2">
-        <h2 className="text-xl sm:text-2xl font-bold bg-gradient-tech bg-clip-text text-transparent">
+        <h2 className="text-2xl font-bold bg-gradient-tech bg-clip-text text-transparent">
           Biblioteca de Señas
         </h2>
-        <p className="text-sm sm:text-base text-muted-foreground">
+        <p className="text-muted-foreground">
           {signs.length} seña{signs.length !== 1 ? 's' : ''} guardada{signs.length !== 1 ? 's' : ''}
         </p>
       </div>
 
-      {/* Video player - responsive */}
+      {/* Video player */}
       {playingSign && (
         <div className="space-y-4">
           <div className="relative">
             <video ref={videoRef} className="hidden" />
             <canvas
               ref={canvasRef}
-              className="w-full rounded-lg border-2 border-accent shadow-glow-tech max-h-[50vh] sm:max-h-96"
+              className="w-full rounded-lg border-2 border-accent shadow-glow-tech max-h-96"
             />
-            <div className="absolute top-2 sm:top-4 left-2 sm:left-4">
-              <Badge className="bg-accent text-accent-foreground text-xs sm:text-sm">
+            <div className="absolute top-4 left-4">
+              <Badge className="bg-accent text-accent-foreground">
                 <Play className="w-3 h-3 mr-1" />
-                <span className="hidden sm:inline">Reproduciendo</span>
-                <span className="sm:hidden">▶</span>
+                Reproduciendo
               </Badge>
             </div>
           </div>
         </div>
       )}
 
-      {/* Signs grid - responsive */}
+      {/* Signs grid */}
       {signs.length === 0 ? (
         <div className="text-center py-8 text-muted-foreground">
-          <div className="space-y-2">
-            <p className="text-sm sm:text-base">No hay señas guardadas aún.</p>
-            <p className="text-xs sm:text-sm">Graba tu primera seña arriba.</p>
-          </div>
+          No hay señas guardadas aún. Graba tu primera seña arriba.
         </div>
       ) : (
-        <div className="grid gap-3 sm:gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {signs.map((sign) => (
-            <Card key={sign.id} className="p-3 sm:p-4 space-y-3">
+            <Card key={sign.id} className="p-4 space-y-3">
               <div className="space-y-2">
-                <h3 className="font-semibold text-base sm:text-lg truncate">{sign.name}</h3>
-                <div className="flex flex-wrap gap-1 sm:gap-2">
-                  <Badge variant="outline" className="text-xs">
+                <h3 className="font-semibold text-lg">{sign.name}</h3>
+                <div className="flex flex-wrap gap-2">
+                  <Badge variant="outline">
                     <Clock className="w-3 h-3 mr-1" />
                     {sign.duration}s
                   </Badge>
-                  <Badge variant="outline" className="text-xs">
+                  <Badge variant="outline">
                     <Hand className="w-3 h-3 mr-1" />
-                    {sign.keyframes.length}
+                    {sign.keyframes.length} frames
                   </Badge>
                 </div>
-                <p className="text-xs sm:text-sm text-muted-foreground">
-                  {new Date(sign.created_at).toLocaleDateString('es-ES', {
+                <p className="text-sm text-muted-foreground">
+                  {sign.createdAt.toLocaleDateString('es-ES', {
                     year: 'numeric',
                     month: 'short',
                     day: 'numeric',
@@ -265,21 +235,15 @@ export const SignLibrary: React.FC<SignLibraryProps> = ({ refreshTrigger }) => {
                   size="sm"
                   onClick={() => playSign(sign)}
                   disabled={playingSign === sign.id}
-                  className="flex-1 text-xs sm:text-sm"
+                  className="flex-1"
                 >
                   <Play className="w-3 h-3 mr-1" />
-                  <span className="hidden sm:inline">
-                    {playingSign === sign.id ? 'Reproduciendo...' : 'Reproducir'}
-                  </span>
-                  <span className="sm:hidden">
-                    {playingSign === sign.id ? '...' : '▶'}
-                  </span>
+                  {playingSign === sign.id ? 'Reproduciendo...' : 'Reproducir'}
                 </Button>
                 <Button
                   size="sm"
                   variant="destructive"
                   onClick={() => deleteSign(sign.id, sign.name)}
-                  className="px-2 sm:px-3"
                 >
                   <Trash2 className="w-3 h-3" />
                 </Button>
@@ -288,14 +252,6 @@ export const SignLibrary: React.FC<SignLibraryProps> = ({ refreshTrigger }) => {
           ))}
         </div>
       )}
-
-      {/* Mobile optimization indicator */}
-      <div className="flex justify-center sm:hidden pt-4">
-        <Badge variant="outline" className="text-xs">
-          <Smartphone className="w-3 h-3 mr-1" />
-          Vista móvil optimizada
-        </Badge>
-      </div>
     </Card>
   );
 };

@@ -3,22 +3,19 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { HandDetector, FrameData } from '@/lib/mediapipe';
-import { supabaseSignService } from '@/lib/supabaseSignService';
+import { signDatabase } from '@/lib/indexeddb';
 import { signComparisonService, ComparisonResult } from '@/lib/signComparison';
 import { voiceAlertService } from '@/lib/voiceAlert';
-import { enhancedLogger, LoggingContext } from '@/lib/enhancedLogging';
 import { useToast } from '@/hooks/use-toast';
-import { Camera, Search, Timer, CheckCircle, AlertCircle, Volume2, Smartphone, RefreshCw } from 'lucide-react';
+import { Camera, Search, Timer, CheckCircle, AlertCircle, Volume2 } from 'lucide-react';
 import { HandLandmarkerResult } from '@mediapipe/tasks-vision';
-import { CameraManager, CameraDevice } from '@/lib/cameraUtils';
 
 export const SignDetector: React.FC = () => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const handDetectorRef = useRef<HandDetector | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
-  const onResultsRef = useRef<(handResults: HandLandmarkerResult, faceResults?: any, poseResults?: any) => void>(() => {});
-  const animationFrameId = useRef<number>();
+  const onResultsRef = useRef<(results: HandLandmarkerResult) => void>(() => {});
   
   const [isDetecting, setIsDetecting] = useState(false);
   const [preparationTime, setPreparationTime] = useState(0);
@@ -30,8 +27,6 @@ export const SignDetector: React.FC = () => {
   const [isComparing, setIsComparing] = useState(false);
   const [comparisonResults, setComparisonResults] = useState<ComparisonResult[]>([]);
   const [bestMatch, setBestMatch] = useState<ComparisonResult | null>(null);
-  const [availableCameras, setAvailableCameras] = useState<CameraDevice[]>([]);
-  const [currentCameraId, setCurrentCameraId] = useState<string | undefined>();
   
   const { toast } = useToast();
 
@@ -53,426 +48,217 @@ export const SignDetector: React.FC = () => {
     setIsCameraOn(false);
   }, []);
 
-  const initializeCamera = useCallback(async (deviceId?: string) => {
+  const initializeCamera = useCallback(async () => {
+    // Stop any existing camera first
     stopCamera();
     
     try {
-      console.log('🎥 Inicializando cámara optimizada...');
-      
-      // Configuración optimizada para Android
-      const cameraManager = CameraManager.getInstance();
-      const constraints: MediaStreamConstraints = {
-        video: {
-          width: { ideal: 1280, max: 1920 },
-          height: { ideal: 720, max: 1080 },
-          frameRate: { ideal: 24, max: 30 }, // Optimizado para APK - 24fps es más estable
-          facingMode: deviceId ? undefined : 'user',
-          deviceId: deviceId ? { exact: deviceId } : undefined,
-          // Configuraciones específicas para Android
-          advanced: [
-            { width: 1280, aspectRatio: 1.777 },
-            { width: 1920, aspectRatio: 1.777 }
-          ]
-        },
-        audio: false
-      };
-
-      // Usar createCameraStream para mantener compatibilidad móvil con fallback a constraints optimizados
-      let stream: MediaStream;
-      try {
-        stream = await navigator.mediaDevices.getUserMedia(constraints);
-      } catch (error) {
-        console.log('Fallback a configuración estándar...');
-        stream = await cameraManager.createCameraStream(deviceId);
-      }
+      console.log('🎥 Inicializando cámara en detector...');
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        video: { 
+          width: { ideal: 320, max: 640 }, 
+          height: { ideal: 240, max: 480 },
+          frameRate: { ideal: 30, max: 30 },
+          facingMode: 'user',
+          aspectRatio: 4/3
+        } 
+      });
       
       streamRef.current = stream;
       
       if (videoRef.current) {
-        // Activar aceleración por hardware
-        videoRef.current.playsInline = true;
-        videoRef.current.muted = true;
-        videoRef.current.setAttribute('playsinline', 'true');
-        videoRef.current.setAttribute('webkit-playsinline', 'true');
-        videoRef.current.setAttribute('autoplay', 'true');
-        videoRef.current.setAttribute('muted', 'true');
-        videoRef.current.setAttribute('preload', 'auto');
-        
         videoRef.current.srcObject = stream;
         
+        // Wait for video to be ready
         await new Promise<void>((resolve) => {
           if (videoRef.current) {
             videoRef.current.onloadedmetadata = () => {
-              console.log('📹 Cámara lista - Resolución:', videoRef.current?.videoWidth, 'x', videoRef.current?.videoHeight);
-              // Intentar orientación horizontal para mejor visualización
-              if (typeof screen !== 'undefined' && screen.orientation && 'lock' in screen.orientation) {
-                try {
-                  (screen.orientation as any).lock('landscape').catch(() => console.log('Orientación no disponible'));
-                } catch (e) {
-                  console.log('Orientación no soportada');
-                }
-              }
+              console.log('📹 Video metadata cargado en detector');
               resolve();
             };
           }
         });
-
+        
         await videoRef.current.play();
+        console.log('▶️ Video reproduciendo en detector');
         
-        // Inicializar detector con configuración optimizada para Android
-        console.log('🤖 Iniciando detector de manos optimizado...');
+        console.log('🤖 Inicializando detector de manos en detector...');
         handDetectorRef.current = new HandDetector();
+        await handDetectorRef.current.initialize(videoRef.current, (res: HandLandmarkerResult) => onResultsRef.current(res));
+        console.log('✅ Detector de manos inicializado en detector');
         
-        // Configuración optimizada para APK (sin GPU delegate que causa lag)
-        const detectorConfig = {
-          maxNumHands: 2,
-          modelComplexity: 1, // 1 para mejor rendimiento en Android
-          minDetectionConfidence: 0.7,
-          minTrackingConfidence: 0.5,
-          selfieMode: true,
-          // NO usar GPU delegate en APK - causa lag significativo
-          // delegate: 'CPU', // CPU es más estable en APK compilado
-          numHands: 2,
-          runningMode: 'VIDEO' // Modo video para mejor rendimiento
-        };
-        
-        await handDetectorRef.current.initialize(
-          videoRef.current, 
-          (handRes: HandLandmarkerResult, faceRes?: any, poseRes?: any) => onResultsRef.current?.(handRes, faceRes, poseRes)
-        );
-        
-        console.log('✅ Detector listo');
         setIsInitialized(true);
         setIsCameraOn(true);
-        setCurrentCameraId(deviceId);
         
         toast({
-          title: "Detector optimizado",
-          description: "Sistema de detección HD activo",
+          title: "Detector iniciado",
+          description: "Sistema de detección activo",
         });
       }
     } catch (error) {
-      console.error('❌ Error en la cámara:', error);
+      console.error('❌ Error accessing camera in detector:', error);
       stopCamera();
       toast({
         title: "Error de cámara",
-        description: "No se pudo acceder a la cámara",
+        description: "Cámara en uso por otra aplicación. Cierra otras pestañas que usen la cámara.",
         variant: "destructive",
       });
     }
-  }, [stopCamera, toast]);
+  }, [toast, stopCamera]);
 
-  const switchCamera = useCallback(async () => {
-    const cameraManager = CameraManager.getInstance();
-    const nextCamera = cameraManager.getNextCamera(currentCameraId);
-    
-    if (nextCamera) {
-      console.log('🔄 Cambiando a cámara:', nextCamera.label);
-      setCurrentCameraId(nextCamera.deviceId);
-      await initializeCamera(nextCamera.deviceId);
-      
-      toast({
-        title: "Cámara cambiada",
-        description: nextCamera.label,
+  const onHandResults = useCallback((results: HandLandmarkerResult) => {
+    if (canvasRef.current && videoRef.current) {
+      const canvas = canvasRef.current;
+      const ctx = canvas.getContext('2d', { 
+        alpha: false, 
+        willReadFrequently: false,
+        desynchronized: true
       });
-    } else {
-      toast({
-        title: "Solo una cámara disponible",
-        description: "No hay otras cámaras para cambiar",
-      });
-    }
-  }, [currentCameraId, initializeCamera, toast]);
-
-  // Initialize cameras list on component mount
-  useEffect(() => {
-    const loadCameras = async () => {
-      const cameraManager = CameraManager.getInstance();
-      const cameras = await cameraManager.getAvailableCameras();
-      setAvailableCameras(cameras);
       
-      // Set default camera (preferably front camera)
-      const frontCamera = cameraManager.getCameraByFacing('front');
-      if (frontCamera) {
-        setCurrentCameraId(frontCamera.deviceId);
-      } else if (cameras.length > 0) {
-        setCurrentCameraId(cameras[0].deviceId);
-      }
-    };
-    
-    loadCameras();
-  }, []);
-
-  const onHandResults = useCallback((results: HandLandmarkerResult, faceResults?: any, poseResults?: any) => {
-    if (!canvasRef.current || !videoRef.current) return;
-    
-    const canvas = canvasRef.current;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    // Configuración del canvas optimizada para APK compilado
-    const video = videoRef.current;
-    const targetWidth = video.videoWidth || 1280;
-    const targetHeight = video.videoHeight || 720;
-    
-    // Solo redimensionar si es necesario (evita lag en APK)
-    if (canvas.width !== targetWidth || canvas.height !== targetHeight) {
-      canvas.width = targetWidth;
-      canvas.height = targetHeight;
-    }
-    
-    // Limpiar el canvas
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    
-    // Dibujar el video con efecto espejo para mejor usabilidad
-    ctx.save();
-    ctx.scale(-1, 1); // Efecto espejo
-    ctx.drawImage(video, -canvas.width, 0, canvas.width, canvas.height);
-    ctx.restore();
-
-    // Optimización adicional para APK: usar paths más eficientes
-    const isMobile = /Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-    const isAPK = window.location.protocol === 'file:' || window.location.hostname === 'localhost';
-
-    // Dibujar landmarks de las manos con mayor claridad
-    if (results.landmarks) {
-      for (const landmarks of results.landmarks) {
-        // Dibujar conexiones de la mano con líneas más claras
-        const connections = [
-          // Pulgar
-          [0, 1], [1, 2], [2, 3], [3, 4],
-          // Índice  
-          [0, 5], [5, 6], [6, 7], [7, 8],
-          // Medio
-          [5, 9], [9, 10], [10, 11], [11, 12],
-          // Anular
-          [9, 13], [13, 14], [14, 15], [15, 16],
-          // Meñique
-          [13, 17], [17, 18], [18, 19], [19, 20],
-          // Base de la palma
-          [0, 17]
-        ];
-        
-        // Líneas de conexión en verde brillante
-        ctx.strokeStyle = '#00FF00';
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        connections.forEach(([start, end]) => {
-          if (landmarks[start] && landmarks[end]) {
-            // Ajustar coordenadas para efecto espejo
-            const startX = canvas.width - landmarks[start].x * canvas.width;
-            const startY = landmarks[start].y * canvas.height;
-            const endX = canvas.width - landmarks[end].x * canvas.width;
-            const endY = landmarks[end].y * canvas.height;
+      if (ctx) {
+        // Use immediate drawing instead of requestAnimationFrame for lower latency
+        if (videoRef.current && videoRef.current.readyState >= 2) {
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
+        }
+      
+        if (results.landmarks) {
+          setHandsDetected(results.landmarks.length);
+          
+          for (const landmarks of results.landmarks) {
+            // Dibujar landmarks clave con mayor tamaño y colores diferentes
+            const keyLandmarks = [0, 4, 8, 12, 16, 20]; // Muñeca y puntas de dedos
             
-            ctx.moveTo(startX, startY);
-            ctx.lineTo(endX, endY);
-          }
-        });
-        ctx.stroke();
-        
-        // Dibujar puntos landmarks más visibles para Android
-        ctx.fillStyle = '#FF0000';
-        for (const point of landmarks) {
-          const x = canvas.width - point.x * canvas.width;
-          const y = point.y * canvas.height;
-          
-          ctx.beginPath();
-          ctx.arc(x, y, 4, 0, 2 * Math.PI); // Puntos más grandes para mejor visibilidad
-          ctx.fill();
-        }
-        
-        // Dibujar plano cartesiano mejorado centrado en la muñeca
-        if (landmarks[0]) {
-          const wristX = canvas.width - landmarks[0].x * canvas.width;
-          const wristY = landmarks[0].y * canvas.height;
-          
-          // Ejes principales del plano cartesiano - optimizado para Android
-          ctx.strokeStyle = 'rgba(0, 255, 0, 0.7)'; // Más opaco para mejor visibilidad
-          ctx.lineWidth = 2; // Líneas más gruesas
-          
-          // Eje X horizontal
-          ctx.beginPath();
-          ctx.moveTo(0, wristY);
-          ctx.lineTo(canvas.width, wristY);
-          ctx.stroke();
-          
-          // Eje Y vertical
-          ctx.beginPath();
-          ctx.moveTo(wristX, 0);
-          ctx.lineTo(wristX, canvas.height);
-          ctx.stroke();
-          
-          // Cuadrícula de referencia más fina
-          ctx.strokeStyle = 'rgba(0, 255, 0, 0.3)';
-          ctx.lineWidth = 1;
-          const gridSize = isMobile ? 60 : 40;
-          
-          // Líneas verticales de la cuadrícula
-          for (let x = (wristX % gridSize); x < canvas.width; x += gridSize) {
+            // Landmarks normales en azul claro
+            ctx.fillStyle = '#22d3ee';
             ctx.beginPath();
-            ctx.moveTo(x, 0);
-            ctx.lineTo(x, canvas.height);
-            ctx.stroke();
-          }
-          
-          // Líneas horizontales de la cuadrícula
-          for (let y = (wristY % gridSize); y < canvas.height; y += gridSize) {
+            for (let i = 0; i < landmarks.length; i++) {
+              if (!keyLandmarks.includes(i)) {
+                const landmark = landmarks[i];
+                ctx.moveTo(landmark.x * canvas.width + 1.5, landmark.y * canvas.height);
+                ctx.arc(
+                  landmark.x * canvas.width,
+                  landmark.y * canvas.height,
+                  1.5,
+                  0,
+                  2 * Math.PI
+                );
+              }
+            }
+            ctx.fill();
+            
+            // Landmarks clave en amarillo/naranja más grandes
+            ctx.fillStyle = '#fbbf24';
             ctx.beginPath();
-            ctx.moveTo(0, y);
-            ctx.lineTo(canvas.width, y);
+            for (const keyIndex of keyLandmarks) {
+              if (landmarks[keyIndex]) {
+                const landmark = landmarks[keyIndex];
+                ctx.moveTo(landmark.x * canvas.width + 3, landmark.y * canvas.height);
+                ctx.arc(
+                  landmark.x * canvas.width,
+                  landmark.y * canvas.height,
+                  3,
+                  0,
+                  2 * Math.PI
+                );
+              }
+            }
+            ctx.fill();
+            
+            // Conexiones estructurales en verde
+            ctx.strokeStyle = '#10b981';
+            ctx.lineWidth = 1.5;
+            const structuralConnections = [
+              [0, 1], [1, 2], [2, 3], [3, 4],
+              [0, 5], [5, 6], [6, 7], [7, 8],
+              [0, 9], [9, 10], [10, 11], [11, 12],
+              [0, 13], [13, 14], [14, 15], [15, 16],
+              [0, 17], [17, 18], [18, 19], [19, 20],
+            ];
+            
+            ctx.beginPath();
+            for (const [start, end] of structuralConnections) {
+              if (landmarks[start] && landmarks[end]) {
+                ctx.moveTo(
+                  landmarks[start].x * canvas.width,
+                  landmarks[start].y * canvas.height
+                );
+                ctx.lineTo(
+                  landmarks[end].x * canvas.width,
+                  landmarks[end].y * canvas.height
+                );
+              }
+            }
             ctx.stroke();
+            
+            // Líneas de distancia entre landmarks clave en rojo para visualizar medidas exactas
+            ctx.strokeStyle = '#ef4444';
+            ctx.lineWidth = 1;
+            ctx.setLineDash([5, 5]);
+            
+            const keyConnections = [
+              [0, 4], [0, 8], [0, 12], [0, 16], [0, 20], // Muñeca a puntas
+              [4, 8], [8, 12], [12, 16], [16, 20] // Entre puntas adyacentes
+            ];
+            
+            ctx.beginPath();
+            for (const [start, end] of keyConnections) {
+              if (landmarks[start] && landmarks[end]) {
+                ctx.moveTo(
+                  landmarks[start].x * canvas.width,
+                  landmarks[start].y * canvas.height
+                );
+                ctx.lineTo(
+                  landmarks[end].x * canvas.width,
+                  landmarks[end].y * canvas.height
+                );
+                
+                // Mostrar distancia numérica
+                const midX = (landmarks[start].x + landmarks[end].x) * canvas.width / 2;
+                const midY = (landmarks[start].y + landmarks[end].y) * canvas.height / 2;
+                const distance = Math.sqrt(
+                  Math.pow(landmarks[start].x - landmarks[end].x, 2) + 
+                  Math.pow(landmarks[start].y - landmarks[end].y, 2)
+                ).toFixed(3);
+                
+                ctx.fillStyle = '#ffffff';
+                ctx.fillRect(midX - 15, midY - 8, 30, 16);
+                ctx.fillStyle = '#000000';
+                ctx.font = '8px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText(distance, midX, midY + 2);
+              }
+            }
+            ctx.stroke();
+            ctx.setLineDash([]);
           }
-          
-          // Marcar el origen (muñeca) con un punto distintivo
-          ctx.fillStyle = '#FF00FF';
-          ctx.beginPath();
-          ctx.arc(wristX, wristY, 8, 0, 2 * Math.PI);
-          ctx.fill();
-          
-          // Etiqueta del origen
-          if (!isMobile) {
-            ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
-            ctx.fillRect(wristX - 25, wristY - 25, 50, 20);
-            ctx.fillStyle = '#000000';
-            ctx.font = '12px Arial';
-            ctx.textAlign = 'center';
-            ctx.fillText('ORIGEN', wristX, wristY - 10);
+        } else {
+          setHandsDetected(0);
+        }
+        
+        // CAPTURA ESTANDARIZADA DE KEYFRAMES - IDENTICA A SIGNRECORDER
+        if (isDetecting) {
+          // Solo capturar keyframes cuando hay manos detectadas
+          if (results.landmarks && results.landmarks.length > 0) {
+            const frameData: FrameData = {
+              timestamp: performance.now(),
+              hands: HandDetector.extractHandData(results)
+            };
+            
+            // Validar que los datos están completos - MISMA VALIDACION
+            if (frameData.hands.length > 0 && frameData.hands[0].landmarks.length === 21) {
+              setDetectionKeyframes(prev => [...prev, frameData]);
+              console.log('✓ Frame válido detectado:', {
+                timestamp: frameData.timestamp,
+                handsCount: frameData.hands.length,
+                landmarksPerHand: frameData.hands.map(h => h.landmarks.length)
+              });
+            }
           }
         }
-      }
-    }
-
-    // Dibujar puntos de pose/torso
-    if (poseResults?.landmarks && poseResults.landmarks.length > 0) {
-      const poseLandmarks = poseResults.landmarks[0];
-      
-      ctx.strokeStyle = '#FF6B35';
-      ctx.fillStyle = '#FF6B35';
-      ctx.lineWidth = 3;
-      
-      // Puntos clave del torso (hombros, codos, muñecas, caderas, rodillas, tobillos)
-      const keyPosePoints = [
-        11, 12, // Hombros
-        13, 14, // Codos
-        15, 16, // Muñecas
-        23, 24, // Caderas
-        25, 26, // Rodillas
-        27, 28  // Tobillos
-      ];
-      
-      // Dibujar puntos del torso
-      keyPosePoints.forEach((pointIndex) => {
-        if (poseLandmarks[pointIndex] && poseLandmarks[pointIndex].visibility > 0.5) {
-          const point = poseLandmarks[pointIndex];
-          const x = canvas.width - point.x * canvas.width;
-          const y = point.y * canvas.height;
-          
-          ctx.beginPath();
-          ctx.arc(x, y, 4, 0, 2 * Math.PI);
-          ctx.fill();
-        }
-      });
-      
-      // Conexiones del torso
-      const torsoConnections = [
-        [11, 12], // Hombros
-        [11, 13], [12, 14], // Hombro a codo
-        [13, 15], [14, 16], // Codo a muñeca
-        [11, 23], [12, 24], // Hombro a cadera
-        [23, 24], // Caderas
-        [23, 25], [24, 26], // Cadera a rodilla
-        [25, 27], [26, 28]  // Rodilla a tobillo
-      ];
-      
-      ctx.beginPath();
-      torsoConnections.forEach(([start, end]) => {
-        if (poseLandmarks[start] && poseLandmarks[end] && 
-            poseLandmarks[start].visibility > 0.5 && poseLandmarks[end].visibility > 0.5) {
-          const startX = canvas.width - poseLandmarks[start].x * canvas.width;
-          const startY = poseLandmarks[start].y * canvas.height;
-          const endX = canvas.width - poseLandmarks[end].x * canvas.width;
-          const endY = poseLandmarks[end].y * canvas.height;
-          
-          ctx.moveTo(startX, startY);
-          ctx.lineTo(endX, endY);
-        }
-      });
-      ctx.stroke();
-      
-      // Plano cartesiano centrado en el centro del torso (punto medio entre hombros)
-      if (poseLandmarks[11] && poseLandmarks[12] && 
-          poseLandmarks[11].visibility > 0.5 && poseLandmarks[12].visibility > 0.5) {
-        const centerX = canvas.width - ((poseLandmarks[11].x + poseLandmarks[12].x) / 2) * canvas.width;
-        const centerY = ((poseLandmarks[11].y + poseLandmarks[12].y) / 2) * canvas.height;
-        
-        // Ejes del plano cartesiano para el torso
-        ctx.strokeStyle = 'rgba(255, 107, 53, 0.7)';
-        ctx.lineWidth = 2;
-        
-        // Eje X
-        ctx.beginPath();
-        ctx.moveTo(0, centerY);
-        ctx.lineTo(canvas.width, centerY);
-        
-        // Eje Y
-        ctx.moveTo(centerX, 0);
-        ctx.lineTo(centerX, canvas.height);
-        ctx.stroke();
-        
-        // Origen (centro del torso)
-        ctx.fillStyle = '#FF6B35';
-        ctx.beginPath();
-        ctx.arc(centerX, centerY, 6, 0, 2 * Math.PI);
-        ctx.fill();
-      }
-    }
-    
-    // Actualizar contador de manos detectadas
-    setHandsDetected(results.landmarks?.length || 0);
-    
-    // CAPTURA ESTANDARIZADA DE KEYFRAMES cuando está detectando
-    if (isDetecting && results.landmarks && results.landmarks.length > 0) {
-      const extractedData = HandDetector.extractHandData(results, faceResults, poseResults);
-      const frameData: FrameData = {
-        timestamp: performance.now(),
-        hands: extractedData.hands,
-        face: extractedData.face,
-        pose: extractedData.pose
-      };
-      
-      // Validar que los datos están completos - MISMA VALIDACION
-      if (frameData.hands.length > 0 && frameData.hands[0].landmarks.length === 21) {
-        setDetectionKeyframes(prev => [...prev, frameData]);
-        console.log('✓ Frame válido detectado:', {
-          timestamp: frameData.timestamp,
-          handsCount: frameData.hands.length,
-          landmarksPerHand: frameData.hands.map(h => h.landmarks.length)
-        });
       }
     }
   }, [isDetecting]);
-
-  // Usar requestAnimationFrame para mejor rendimiento en Android
-  const animate = useCallback(() => {
-    if (handDetectorRef.current && videoRef.current && isCameraOn) {
-      // El detector ya maneja su propio ciclo de detección
-    }
-    if (isCameraOn) {
-      animationFrameId.current = requestAnimationFrame(animate);
-    }
-  }, [isCameraOn]);
-
-  // Iniciar/Detener la animación
-  useEffect(() => {
-    if (isCameraOn) {
-      animationFrameId.current = requestAnimationFrame(animate);
-    }
-    return () => {
-      if (animationFrameId.current) {
-        cancelAnimationFrame(animationFrameId.current);
-      }
-    };
-  }, [isCameraOn, animate]);
 
   useEffect(() => {
     onResultsRef.current = onHandResults;
@@ -505,8 +291,8 @@ export const SignDetector: React.FC = () => {
         return;
       }
 
-      await supabaseSignService.initialize();
-      const savedSigns = await supabaseSignService.getAllSigns();
+      await signDatabase.initialize();
+      const savedSigns = await signDatabase.getAllSigns();
       
       console.log('Señas guardadas encontradas:', savedSigns.length);
       
@@ -568,45 +354,38 @@ export const SignDetector: React.FC = () => {
         }))
       );
 
-        // Enhanced logging for comparison results
-        enhancedLogger.logComparisonResults(results, results.filter(r => r.similarity >= 0.8));
-
-        if (match) {
-          console.log('✓ Seña reconocida:', match);
-          setBestMatch(match);
-          
-          enhancedLogger.logValidSign(match.signName, match.similarity);
+      if (match) {
+        console.log('✓ Coincidencia encontrada:', match);
+        setBestMatch(match);
+        
+        try {
+          await voiceAlertService.playSignRecognitionAlert(match.signName);
           
           toast({
-            title: `Seña reconocida: ${match.signName}`,
-            description: `Similitud: ${(match.similarity * 100).toFixed(1)}%`,
+            title: "¡Seña reconocida!",
+            description: `${match.signName} (${(match.similarity * 100).toFixed(1)}% similitud)`,
           });
-          
-          try {
-            await voiceAlertService.playSignRecognitionAlert(match.signName);
-          } catch (voiceError) {
-            console.error('Error en alerta de voz:', voiceError);
-          }
-        } else {
-          console.log('✗ Seña no encontrada');
-          
-          // Log invalid signs for analysis
-          const invalidSigns = results.filter(r => r.similarity < 0.8 && r.similarity > 0.2);
-          invalidSigns.forEach(result => {
-            enhancedLogger.logInvalidSign(result.signName, result.similarity);
-          });
-          
+        } catch (voiceError) {
+          console.error('Error en alerta de voz:', voiceError);
           toast({
-            title: "Seña no encontrada",
-            description: "Los resultados de comparación se muestran abajo. Puedes intentar de nuevo.",
+            title: "Seña reconocida",
+            description: `${match.signName} (${(match.similarity * 100).toFixed(1)}% similitud)`,
           });
-          
-          try {
-            await voiceAlertService.playNoMatchAlert();
-          } catch (voiceError) {
-            console.error('Error en alerta de voz:', voiceError);
-          }
         }
+      } else {
+        console.log('✗ No se encontraron coincidencias válidas');
+        try {
+          await voiceAlertService.playNoMatchAlert();
+        } catch (voiceError) {
+          console.error('Error en alerta de voz:', voiceError);
+        }
+        
+        toast({
+          title: "No hay coincidencias",
+          description: "La seña no coincide con ninguna guardada (< 85%)",
+          variant: "destructive",
+        });
+      }
 
     } catch (error) {
       console.error('Error durante la comparación:', error);
@@ -622,17 +401,6 @@ export const SignDetector: React.FC = () => {
 
   const startDetection = useCallback(async () => {
     if (!isInitialized) return;
-    
-    // Reset enhanced logging counters
-    enhancedLogger.resetCounters();
-    
-    const loggingContext: LoggingContext = {
-      handsDetected: handsDetected,
-      requiredHands: 1,
-      timestamp: performance.now()
-    };
-    
-    enhancedLogger.logDetectionStart(loggingContext);
     
     setPreparationTime(3);
     setDetectionKeyframes([]);
@@ -695,9 +463,9 @@ export const SignDetector: React.FC = () => {
     if (isCameraOn) {
       stopCamera();
     } else {
-      await initializeCamera(currentCameraId);
+      await initializeCamera();
     }
-  }, [isCameraOn, stopCamera, initializeCamera, currentCameraId]);
+  }, [isCameraOn, stopCamera, initializeCamera]);
 
   useEffect(() => {
     return () => {
@@ -763,20 +531,6 @@ export const SignDetector: React.FC = () => {
           )}
         </div>
 
-        {/* Botón de cambio de cámara en esquina superior derecha */}
-        {isCameraOn && availableCameras.length > 1 && (
-          <div className="absolute top-4 right-4 z-10">
-            <Button
-              onClick={switchCamera}
-              variant="outline"
-              size="sm"
-              className="bg-background/80 backdrop-blur-sm hover:bg-background/90"
-            >
-              <RefreshCw className="w-4 h-4" />
-            </Button>
-          </div>
-        )}
-
         {isDetecting && (
           <div className="absolute top-4 right-4">
             <Badge className="bg-accent text-accent-foreground animate-pulse">
@@ -800,7 +554,7 @@ export const SignDetector: React.FC = () => {
             <Badge className="bg-success text-success-foreground">
               <CheckCircle className="w-3 h-3 mr-1" />
               <Volume2 className="w-3 h-3 mr-1" />
-              {bestMatch.signName}
+              {bestMatch.signName} ({(bestMatch.similarity * 100).toFixed(1)}%)
             </Badge>
           </div>
         )}
@@ -911,10 +665,10 @@ export const SignDetector: React.FC = () => {
                       <span className="font-medium">{result.signName}</span>
                     </div>
                     <div className="flex items-center gap-2">
-                      <span className={`text-sm px-2 py-1 rounded ${
-                        result.isMatch ? 'bg-success/20 text-success' : 'bg-muted text-muted-foreground'
+                      <span className={`text-sm font-mono ${
+                        result.isMatch ? 'text-success' : 'text-muted-foreground'
                       }`}>
-                        {result.isMatch ? 'Detectada' : 'No detectada'}
+                        {(result.similarity * 100).toFixed(1)}%
                       </span>
                       {result.isMatch && (
                         <CheckCircle className="w-4 h-4 text-success" />

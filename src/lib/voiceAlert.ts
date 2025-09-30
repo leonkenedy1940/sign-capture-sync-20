@@ -1,65 +1,23 @@
-import { Capacitor } from '@capacitor/core';
-import { Device } from '@capacitor/device';
-
 export class VoiceAlertService {
-  private synth: SpeechSynthesis | null = null;
+  private synth: SpeechSynthesis;
   private voices: SpeechSynthesisVoice[] = [];
-  private isAndroid = false;
 
   constructor() {
-    this.initializeVoiceService();
-  }
-
-  private async initializeVoiceService() {
-    // Detectar si estamos en Android
-    if (Capacitor.isNativePlatform()) {
-      try {
-        const deviceInfo = await Device.getInfo();
-        this.isAndroid = deviceInfo.platform === 'android';
-      } catch (error) {
-        console.warn('Error detectando plataforma:', error);
-      }
-    }
-
-    // Inicializar Web Speech API
-    if ('speechSynthesis' in window && window.speechSynthesis) {
-      this.synth = window.speechSynthesis;
-      
-      // En Android WebView, esperar un poco antes de cargar voces
-      if (this.isAndroid) {
-        setTimeout(() => this.loadVoices(), 100);
-      } else {
-        this.loadVoices();
-      }
-    } else {
-      console.warn('Speech synthesis not available in this browser');
-    }
+    this.synth = window.speechSynthesis;
+    this.loadVoices();
   }
 
   /**
-   * Carga las voces disponibles con compatibilidad Android
+   * Carga las voces disponibles
    */
   private loadVoices(): void {
-    if (!this.synth) return;
+    this.voices = this.synth.getVoices();
     
-    const loadVoicesFromSynth = () => {
-      this.voices = this.synth!.getVoices();
-      console.log(`Voces cargadas: ${this.voices.length}`, this.voices.map(v => ({ name: v.name, lang: v.lang })));
-    };
-
-    // Cargar voces inmediatamente
-    loadVoicesFromSynth();
-    
-    // Si las voces no están cargadas aún o estamos en Android, escuchar el evento
-    if (this.voices.length === 0 || this.isAndroid) {
-      this.synth.addEventListener('voiceschanged', loadVoicesFromSynth);
-      
-      // En Android, intentar cargar voces múltiples veces
-      if (this.isAndroid) {
-        setTimeout(loadVoicesFromSynth, 200);
-        setTimeout(loadVoicesFromSynth, 500);
-        setTimeout(loadVoicesFromSynth, 1000);
-      }
+    // Si las voces no están cargadas aún, escuchar el evento
+    if (this.voices.length === 0) {
+      this.synth.addEventListener('voiceschanged', () => {
+        this.voices = this.synth.getVoices();
+      });
     }
   }
 
@@ -84,127 +42,58 @@ export class VoiceAlertService {
 
   /**
    * Reproduce una alerta de voz con el nombre de la seña reconocida
-   * Optimizado para Android WebView
    */
   async playSignRecognitionAlert(signName: string): Promise<void> {
-    if (!this.synth || !this.isSupported()) {
-      console.warn('Speech synthesis not available');
-      return Promise.resolve();
-    }
-
     return new Promise((resolve, reject) => {
-      try {
-        // Cancelar cualquier síntesis en curso
-        this.synth!.cancel();
+      // Cancelar cualquier síntesis en curso
+      this.synth.cancel();
 
-        const message = `Seña reconocida: ${signName}`;
-        const utterance = new SpeechSynthesisUtterance(message);
+      const message = `Seña reconocida: ${signName}`;
+      const utterance = new SpeechSynthesisUtterance(message);
 
-        // Configurar la voz
-        const voice = this.getSpanishVoice();
-        if (voice) {
-          utterance.voice = voice;
-        }
-
-        // Configurar parámetros de voz optimizados para Android
-        utterance.rate = this.isAndroid ? 0.8 : 0.9; // Más lento en Android
-        utterance.pitch = 1.0;
-        utterance.volume = 1.0; // Volumen máximo en Android
-
-        // Configurar idioma específico para Android
-        if (this.isAndroid) {
-          utterance.lang = 'es-ES';
-        }
-
-        // Configurar eventos con timeout para Android
-        let timeoutId: NodeJS.Timeout;
-        
-        utterance.onend = () => {
-          clearTimeout(timeoutId);
-          resolve();
-        };
-        
-        utterance.onerror = (event) => {
-          clearTimeout(timeoutId);
-          console.error('Error de síntesis de voz:', event.error);
-          reject(new Error(`Error de síntesis de voz: ${event.error}`));
-        };
-
-        // Timeout de seguridad para Android WebView
-        if (this.isAndroid) {
-          timeoutId = setTimeout(() => {
-            console.warn('Timeout en síntesis de voz, resolviendo');
-            resolve();
-          }, 5000);
-        }
-
-        // Reproducir
-        console.log('Reproduciendo mensaje:', message);
-        this.synth!.speak(utterance);
-      } catch (error) {
-        console.error('Error en playSignRecognitionAlert:', error);
-        resolve(); // No fallar, solo continuar silenciosamente
+      // Configurar la voz
+      const voice = this.getSpanishVoice();
+      if (voice) {
+        utterance.voice = voice;
       }
+
+      // Configurar parámetros de voz
+      utterance.rate = 0.9; // Velocidad ligeramente más lenta para claridad
+      utterance.pitch = 1.0; // Tono normal
+      utterance.volume = 0.8; // Volumen alto pero no máximo
+
+      // Configurar eventos
+      utterance.onend = () => resolve();
+      utterance.onerror = (event) => reject(new Error(`Error de síntesis de voz: ${event.error}`));
+
+      // Reproducir
+      this.synth.speak(utterance);
     });
   }
 
   /**
    * Reproduce una alerta cuando no hay coincidencias
-   * Optimizado para Android WebView
    */
   async playNoMatchAlert(): Promise<void> {
-    if (!this.synth || !this.isSupported()) {
-      console.warn('Speech synthesis not available');
-      return Promise.resolve();
-    }
-
     return new Promise((resolve, reject) => {
-      try {
-        this.synth!.cancel();
+      this.synth.cancel();
 
-        const message = "No se encontraron coincidencias";
-        const utterance = new SpeechSynthesisUtterance(message);
+      const message = "No se encontraron coincidencias";
+      const utterance = new SpeechSynthesisUtterance(message);
 
-        const voice = this.getSpanishVoice();
-        if (voice) {
-          utterance.voice = voice;
-        }
-
-        // Configurar parámetros optimizados para Android
-        utterance.rate = this.isAndroid ? 0.8 : 0.9;
-        utterance.pitch = 1.0;
-        utterance.volume = 1.0;
-
-        if (this.isAndroid) {
-          utterance.lang = 'es-ES';
-        }
-
-        // Configurar eventos con timeout
-        let timeoutId: NodeJS.Timeout;
-        
-        utterance.onend = () => {
-          clearTimeout(timeoutId);
-          resolve();
-        };
-        
-        utterance.onerror = (event) => {
-          clearTimeout(timeoutId);
-          console.error('Error de síntesis de voz:', event.error);
-          resolve(); // No fallar, continuar silenciosamente
-        };
-
-        if (this.isAndroid) {
-          timeoutId = setTimeout(() => {
-            console.warn('Timeout en síntesis de voz, resolviendo');
-            resolve();
-          }, 5000);
-        }
-
-        this.synth!.speak(utterance);
-      } catch (error) {
-        console.error('Error en playNoMatchAlert:', error);
-        resolve();
+      const voice = this.getSpanishVoice();
+      if (voice) {
+        utterance.voice = voice;
       }
+
+      utterance.rate = 0.9;
+      utterance.pitch = 1.0;
+      utterance.volume = 0.8;
+
+      utterance.onend = () => resolve();
+      utterance.onerror = (event) => reject(new Error(`Error de síntesis de voz: ${event.error}`));
+
+      this.synth.speak(utterance);
     });
   }
 
@@ -212,16 +101,14 @@ export class VoiceAlertService {
    * Detiene cualquier reproducción de voz en curso
    */
   stop(): void {
-    if (this.synth) {
-      this.synth.cancel();
-    }
+    this.synth.cancel();
   }
 
   /**
    * Verifica si el navegador soporta síntesis de voz
    */
   isSupported(): boolean {
-    return 'speechSynthesis' in window && !!window.speechSynthesis && !!this.synth;
+    return 'speechSynthesis' in window;
   }
 
   /**
